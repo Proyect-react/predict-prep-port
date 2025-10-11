@@ -3,11 +3,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { Database, AlertCircle, CheckCircle, Trash2, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 const CleanPage = () => {
   const { toast } = useToast();
+  const [selectedDataset, setSelectedDataset] = useState("sales_2024.csv");
+
+  const datasets = ["sales_2024.csv", "customer_data.json", "product_inventory.xlsx"];
 
   const sampleData = [
     { id: 1, name: "Juan Pérez", age: 28, email: "juan@example.com", salary: 50000 },
@@ -32,11 +38,36 @@ const CleanPage = () => {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-4xl font-bold text-foreground mb-2">Limpiar Datos</h1>
-        <p className="text-muted-foreground">
-          Analiza y limpia tu dataset usando pandas y numpy
-        </p>
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-4xl font-bold text-foreground mb-2">Limpiar Datos</h1>
+          <p className="text-muted-foreground">
+            Analiza y limpia tu dataset usando pandas y numpy
+          </p>
+        </div>
+        
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <CardTitle className="text-foreground">Dataset Actual</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="dataset-select">Seleccionar Dataset</Label>
+              <Select value={selectedDataset} onValueChange={setSelectedDataset}>
+                <SelectTrigger id="dataset-select">
+                  <SelectValue placeholder="Selecciona un dataset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {datasets.map((dataset) => (
+                    <SelectItem key={dataset} value={dataset}>
+                      {dataset}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">

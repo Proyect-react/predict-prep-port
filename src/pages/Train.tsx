@@ -4,11 +4,45 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sparkles, TrendingUp, Zap, Target } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const TrainPage = () => {
   const { toast } = useToast();
+  const [selectedDataset, setSelectedDataset] = useState("sales_2024.csv");
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [targetVariable, setTargetVariable] = useState("");
+
+  const datasets = ["sales_2024.csv", "customer_data.json", "product_inventory.xlsx"];
+  const columns = ["age", "salary", "experience", "churn", "price", "category", "department", "location"];
+  
+  const confusionData = [
+    { name: 'True Positive', value: 342 },
+    { name: 'True Negative', value: 298 },
+    { name: 'False Positive', value: 18 },
+    { name: 'False Negative', value: 12 }
+  ];
+
+  const trainingData = [
+    { epoch: 1, train: 0.65, val: 0.62 },
+    { epoch: 20, train: 0.82, val: 0.79 },
+    { epoch: 40, train: 0.91, val: 0.87 },
+    { epoch: 60, train: 0.95, val: 0.92 },
+    { epoch: 80, train: 0.97, val: 0.95 },
+    { epoch: 100, train: 0.98, val: 0.968 }
+  ];
+
+  const featureImportance = [
+    { feature: 'experience', importance: 0.35 },
+    { feature: 'salary', importance: 0.28 },
+    { feature: 'age', importance: 0.22 },
+    { feature: 'department', importance: 0.15 }
+  ];
+
+  const COLORS = ['hsl(var(--primary))', 'hsl(var(--accent))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))'];
 
   const handleTrain = (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,6 +123,30 @@ const TrainPage = () => {
             <CardContent>
               <form onSubmit={handleTrain} className="space-y-6">
                 <div className="space-y-2">
+                  <Label htmlFor="model-name">Nombre del Modelo</Label>
+                  <Input
+                    id="model-name"
+                    placeholder="Ej: predictor_ventas_v1"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="dataset">Dataset (CSV Limpio)</Label>
+                  <Select value={selectedDataset} onValueChange={setSelectedDataset}>
+                    <SelectTrigger id="dataset">
+                      <SelectValue placeholder="Selecciona un dataset" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {datasets.map((dataset) => (
+                        <SelectItem key={dataset} value={dataset}>
+                          {dataset}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="algorithm">Algoritmo</Label>
                   <select
                     id="algorithm"
@@ -131,19 +189,56 @@ const TrainPage = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="features">Features (columnas)</Label>
-                  <Input
-                    id="features"
-                    placeholder="Ej: age, salary, experience"
-                  />
+                  <Label>Features (columnas)</Label>
+                  <div className="flex flex-wrap gap-2 p-3 border border-input rounded-md bg-background min-h-[60px]">
+                    {selectedFeatures.length > 0 ? (
+                      selectedFeatures.map((feature) => (
+                        <Badge
+                          key={feature}
+                          variant="secondary"
+                          className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
+                          onClick={() => setSelectedFeatures(selectedFeatures.filter(f => f !== feature))}
+                        >
+                          {feature} ✕
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Selecciona columnas abajo</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {columns.filter(col => !selectedFeatures.includes(col) && col !== targetVariable).map((col) => (
+                      <Badge
+                        key={col}
+                        variant="outline"
+                        className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
+                        onClick={() => setSelectedFeatures([...selectedFeatures, col])}
+                      >
+                        + {col}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="target">Target Variable</Label>
-                  <Input
-                    id="target"
-                    placeholder="Ej: churn, price, category"
-                  />
+                  <Label>Target Variable</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {columns.filter(col => !selectedFeatures.includes(col)).map((col) => (
+                      <Badge
+                        key={col}
+                        variant={targetVariable === col ? "default" : "outline"}
+                        className="cursor-pointer"
+                        onClick={() => setTargetVariable(col)}
+                      >
+                        {col}
+                      </Badge>
+                    ))}
+                  </div>
+                  {targetVariable && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Seleccionado: <span className="font-medium text-foreground">{targetVariable}</span>
+                    </p>
+                  )}
                 </div>
 
                 <Button type="submit" className="w-full bg-gradient-primary hover:opacity-90 text-primary-foreground">
@@ -194,55 +289,135 @@ const TrainPage = () => {
         </TabsContent>
 
         <TabsContent value="metrics" className="mt-6">
-          <Card className="bg-gradient-card border-border shadow-card">
-            <CardHeader>
-              <CardTitle className="text-foreground">Métricas de Rendimiento</CardTitle>
-              <CardDescription>Análisis del mejor modelo</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Accuracy</span>
-                    <span className="font-medium text-foreground">96.8%</span>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="bg-gradient-card border-border shadow-card">
+              <CardHeader>
+                <CardTitle className="text-foreground">Métricas Principales</CardTitle>
+                <CardDescription>Accuracy, Precision, Recall y F1-Score</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Accuracy</span>
+                      <span className="font-medium text-foreground">96.8%</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-primary" style={{ width: "96.8%" }} />
+                    </div>
                   </div>
-                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-primary" style={{ width: "96.8%" }} />
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Precision</span>
-                    <span className="font-medium text-foreground">94.2%</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Precision</span>
+                      <span className="font-medium text-foreground">94.2%</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-accent" style={{ width: "94.2%" }} />
+                    </div>
                   </div>
-                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-accent" style={{ width: "94.2%" }} />
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Recall</span>
-                    <span className="font-medium text-foreground">95.5%</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Recall</span>
+                      <span className="font-medium text-foreground">95.5%</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-primary" style={{ width: "95.5%" }} />
+                    </div>
                   </div>
-                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-primary" style={{ width: "95.5%" }} />
-                  </div>
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">F1-Score</span>
-                    <span className="font-medium text-foreground">94.8%</span>
-                  </div>
-                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-accent" style={{ width: "94.8%" }} />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">F1-Score</span>
+                      <span className="font-medium text-foreground">94.8%</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-accent" style={{ width: "94.8%" }} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-card border-border shadow-card">
+              <CardHeader>
+                <CardTitle className="text-foreground">Matriz de Confusión</CardTitle>
+                <CardDescription>Distribución de predicciones</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart>
+                    <Pie
+                      data={confusionData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {confusionData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-card border-border shadow-card lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-foreground">Curva de Aprendizaje</CardTitle>
+                <CardDescription>Evolución del accuracy durante el entrenamiento</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={trainingData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="epoch" stroke="hsl(var(--muted-foreground))" />
+                    <YAxis stroke="hsl(var(--muted-foreground))" />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--card))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                    />
+                    <Legend />
+                    <Line type="monotone" dataKey="train" stroke="hsl(var(--primary))" strokeWidth={2} name="Train Accuracy" />
+                    <Line type="monotone" dataKey="val" stroke="hsl(var(--accent))" strokeWidth={2} name="Validation Accuracy" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-card border-border shadow-card lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-foreground">Importancia de Features</CardTitle>
+                <CardDescription>Contribución de cada variable al modelo</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={featureImportance} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis type="number" stroke="hsl(var(--muted-foreground))" />
+                    <YAxis dataKey="feature" type="category" stroke="hsl(var(--muted-foreground))" />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: 'hsl(var(--card))', 
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                    />
+                    <Bar dataKey="importance" fill="hsl(var(--primary))" radius={[0, 8, 8, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
