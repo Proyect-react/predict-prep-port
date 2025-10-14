@@ -128,24 +128,36 @@ const CleanPage = () => {
                       <TableHead>Edad</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Salario</TableHead>
+                      <TableHead>Estado</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sampleData.map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell className="font-medium">{row.id}</TableCell>
-                        <TableCell>
-                          {row.name ? row.name : <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
-                        </TableCell>
-                        <TableCell>
-                          {row.age ?? <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
-                        </TableCell>
-                        <TableCell>{row.email}</TableCell>
-                        <TableCell>
-                          {row.salary ? `$${row.salary.toLocaleString()}` : <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {sampleData.map((row) => {
+                      const isActive = row.age !== null && row.salary !== null;
+                      return (
+                        <TableRow key={row.id}>
+                          <TableCell className="font-medium">{row.id}</TableCell>
+                          <TableCell>
+                            {row.name ? row.name : <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
+                          </TableCell>
+                          <TableCell>
+                            {row.age ?? <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
+                          </TableCell>
+                          <TableCell>{row.email}</TableCell>
+                          <TableCell>
+                            {row.salary ? `$${row.salary.toLocaleString()}` : <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant="outline" 
+                              className={isActive ? "bg-success/10 text-success border-success/20" : "bg-destructive/10 text-destructive border-destructive/20"}
+                            >
+                              {isActive ? "Activo" : "Inactivo"}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
