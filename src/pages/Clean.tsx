@@ -20,13 +20,18 @@ const CleanPage = () => {
     { id: 2, name: "María García", age: null, email: "maria@example.com", salary: 65000 },
     { id: 3, name: null, age: 35, email: "invalid-email", salary: 55000 },
     { id: 4, name: "Carlos López", age: 42, email: "carlos@example.com", salary: null },
+    { id: 5, name: "Ana Martínez", age: null, email: "ana@example.com", salary: null },
+    { id: 6, name: null, age: null, email: "correo-invalido", salary: 48000 },
+    { id: 7, name: "Pedro Sánchez", age: 31, email: "pedro@example.com", salary: 72000 },
+    { id: 8, name: "Laura Torres", age: 29, email: null, salary: null },
+    { id: 9, name: null, age: 38, email: "sofia@example.com", salary: 61000 },
   ];
 
   const dataQuality = [
-    { column: "name", nulls: 1, type: "string", status: "warning" },
-    { column: "age", nulls: 1, type: "integer", status: "warning" },
-    { column: "email", nulls: 0, type: "string", status: "error" },
-    { column: "salary", nulls: 1, type: "float", status: "warning" },
+    { column: "name", nulls: 3, type: "string", status: "warning" },
+    { column: "age", nulls: 3, type: "integer", status: "warning" },
+    { column: "email", nulls: 1, type: "string", status: "error" },
+    { column: "salary", nulls: 4, type: "float", status: "warning" },
   ];
 
   const handleClean = () => {
@@ -77,8 +82,8 @@ const CleanPage = () => {
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">1,234</div>
-            <p className="text-xs text-muted-foreground">4 columnas detectadas</p>
+            <div className="text-2xl font-bold text-foreground">9</div>
+            <p className="text-xs text-muted-foreground">5 columnas detectadas</p>
           </CardContent>
         </Card>
 
@@ -88,8 +93,8 @@ const CleanPage = () => {
             <AlertCircle className="h-4 w-4 text-warning" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-warning">3</div>
-            <p className="text-xs text-muted-foreground">0.24% del dataset</p>
+            <div className="text-2xl font-bold text-warning">11</div>
+            <p className="text-xs text-muted-foreground">24.4% del dataset</p>
           </CardContent>
         </Card>
 
@@ -99,7 +104,7 @@ const CleanPage = () => {
             <CheckCircle className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-success">97.6%</div>
+            <div className="text-2xl font-bold text-success">75.6%</div>
             <p className="text-xs text-muted-foreground">Datos válidos</p>
           </CardContent>
         </Card>
@@ -116,7 +121,7 @@ const CleanPage = () => {
           <Card className="bg-gradient-card border-border shadow-card">
             <CardHeader>
               <CardTitle className="text-foreground">Muestra del Dataset</CardTitle>
-              <CardDescription>Primeras 4 filas del archivo</CardDescription>
+              <CardDescription>Primeras 9 filas del archivo</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-md border border-border overflow-hidden">
