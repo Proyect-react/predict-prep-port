@@ -12,7 +12,13 @@ import { useState } from "react";
 const CleanPage = () => {
   const { toast } = useToast();
   const [selectedDataset, setSelectedDataset] = useState("ventas.csv");
-  const [currentData, setCurrentData] = useState([
+  const [currentData, setCurrentData] = useState<Array<{
+    id: number;
+    name: string | null | "N/A";
+    age: number | null | "N/A";
+    email: string | null | "N/A";
+    salary: number | null | "N/A";
+  }>>([
     { id: 1, name: "Juan Pérez", age: 28, email: "juan@example.com", salary: 50000 },
     { id: 2, name: "María García", age: null, email: "maria@example.com", salary: 65000 },
     { id: 3, name: null, age: 35, email: "invalid-email", salary: 55000 },
@@ -30,10 +36,10 @@ const CleanPage = () => {
   const calculateStats = () => {
     const totalRecords = currentData.length;
     const nullCounts = {
-      name: currentData.filter(r => r.name === null).length,
-      age: currentData.filter(r => r.age === null).length,
-      email: currentData.filter(r => r.email === null).length,
-      salary: currentData.filter(r => r.salary === null).length,
+      name: currentData.filter(r => r.name === null || r.name === "N/A").length,
+      age: currentData.filter(r => r.age === null || r.age === "N/A").length,
+      email: currentData.filter(r => r.email === null || r.email === "N/A").length,
+      salary: currentData.filter(r => r.salary === null || r.salary === "N/A").length,
     };
     const totalNulls = Object.values(nullCounts).reduce((a, b) => a + b, 0);
     const totalCells = totalRecords * 4;
@@ -54,19 +60,23 @@ const CleanPage = () => {
   const handleRemoveNulls = () => {
     setIsProcessing(true);
     toast({
-      title: "Eliminando valores nulos",
+      title: "Limpiando valores nulos",
       description: "Procesando dataset...",
     });
 
     setTimeout(() => {
-      const cleanedData = currentData.filter(row => 
-        row.name !== null && row.age !== null && row.email !== null && row.salary !== null
-      );
+      const cleanedData = currentData.map(row => ({
+        ...row,
+        name: (row.name === null ? "N/A" : row.name) as string | "N/A",
+        age: (row.age === null ? "N/A" : row.age) as number | "N/A",
+        email: (row.email === null ? "N/A" : row.email) as string | "N/A",
+        salary: (row.salary === null ? "N/A" : row.salary) as number | "N/A",
+      }));
       setCurrentData(cleanedData);
       setIsProcessing(false);
       toast({
         title: "Limpieza completada",
-        description: `Se eliminaron ${currentData.length - cleanedData.length} filas con valores nulos.`,
+        description: "Valores nulos reemplazados con N/A.",
       });
     }, 1500);
   };
@@ -79,18 +89,18 @@ const CleanPage = () => {
     });
 
     setTimeout(() => {
-      const ages = currentData.filter(r => r.age !== null).map(r => r.age!);
-      const salaries = currentData.filter(r => r.salary !== null).map(r => r.salary!);
+      const ages = currentData.filter(r => typeof r.age === 'number').map(r => r.age as number);
+      const salaries = currentData.filter(r => typeof r.salary === 'number').map(r => r.salary as number);
       
       const avgAge = Math.round(ages.reduce((a, b) => a + b, 0) / ages.length);
       const avgSalary = Math.round(salaries.reduce((a, b) => a + b, 0) / salaries.length);
 
       const imputedData = currentData.map(row => ({
         ...row,
-        age: row.age ?? avgAge,
-        salary: row.salary ?? avgSalary,
-        name: row.name ?? "Desconocido",
-        email: row.email ?? "sin-email@example.com"
+        age: typeof row.age === 'number' ? row.age : avgAge,
+        salary: typeof row.salary === 'number' ? row.salary : avgSalary,
+        name: row.name === null || row.name === "N/A" ? "Desconocido" : row.name,
+        email: row.email === null || row.email === "N/A" ? "sin-email@example.com" : row.email
       }));
 
       setCurrentData(imputedData);
@@ -219,19 +229,19 @@ const CleanPage = () => {
                   </TableHeader>
                   <TableBody>
                     {currentData.map((row) => {
-                      const isActive = row.age !== null && row.salary !== null;
+                      const isActive = row.age !== null && row.age !== "N/A" && row.salary !== null && row.salary !== "N/A";
                       return (
                         <TableRow key={row.id} className={isProcessing ? "opacity-50 animate-pulse" : ""}>
                           <TableCell className="font-medium">{row.id}</TableCell>
                           <TableCell>
-                            {row.name ? row.name : <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
+                            {row.name && row.name !== "N/A" ? row.name : <Badge variant="outline" className="bg-warning/10 text-warning">{row.name === "N/A" ? "N/A" : "NULL"}</Badge>}
                           </TableCell>
                           <TableCell>
-                            {row.age ?? <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
+                            {row.age && row.age !== "N/A" ? row.age : <Badge variant="outline" className="bg-warning/10 text-warning">{row.age === "N/A" ? "N/A" : "NULL"}</Badge>}
                           </TableCell>
-                          <TableCell>{row.email}</TableCell>
+                          <TableCell>{row.email && row.email !== "N/A" ? row.email : <Badge variant="outline" className="bg-warning/10 text-warning">{row.email === "N/A" ? "N/A" : "NULL"}</Badge>}</TableCell>
                           <TableCell>
-                            {row.salary ? `$${row.salary.toLocaleString()}` : <Badge variant="outline" className="bg-warning/10 text-warning">NULL</Badge>}
+                            {row.salary && row.salary !== "N/A" ? `$${typeof row.salary === 'number' ? row.salary.toLocaleString() : row.salary}` : <Badge variant="outline" className="bg-warning/10 text-warning">{row.salary === "N/A" ? "N/A" : "NULL"}</Badge>}
                           </TableCell>
                           <TableCell>
                             <Badge 
@@ -298,7 +308,7 @@ const CleanPage = () => {
                 disabled={isProcessing}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                Eliminar valores nulos
+                Limpiar valores nulos
               </Button>
               <Button 
                 variant="outline" 
