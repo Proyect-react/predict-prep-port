@@ -3,14 +3,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, Database, Link as LinkIcon, FileText } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Upload, Database, Link as LinkIcon, FileText, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 const UploadPage = () => {
   const { toast } = useToast();
+  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+
+  const previewData = [
+    { id: 1, producto: "Laptop Dell", cantidad: 15, precio: 899.99, categoria: "Electrónica" },
+    { id: 2, producto: "Mouse Logitech", cantidad: 50, precio: 29.99, categoria: "Accesorios" },
+    { id: 3, producto: "Teclado Mecánico", cantidad: 23, precio: 79.99, categoria: "Accesorios" },
+    { id: 4, producto: "Monitor Samsung", cantidad: 8, precio: 299.99, categoria: "Electrónica" },
+    { id: 5, producto: "Webcam HD", cantidad: 12, precio: 59.99, categoria: "Periféricos" },
+  ];
 
   const handleFileUpload = (e: React.FormEvent) => {
     e.preventDefault();
+    const fileInput = document.getElementById('file') as HTMLInputElement;
+    const fileName = fileInput?.files?.[0]?.name || "ventas.csv";
+    
+    setUploadedFile(fileName);
+    setShowPreview(true);
+    
     toast({
       title: "Archivo cargado",
       description: "Tu dataset se ha subido correctamente al backend.",
@@ -148,6 +167,55 @@ const UploadPage = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {showPreview && (
+        <Card className="bg-gradient-card border-border shadow-card">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <CardTitle className="flex items-center gap-2 text-foreground">
+                  <CheckCircle className="h-5 w-5 text-success" />
+                  Vista Previa: {uploadedFile}
+                </CardTitle>
+                <CardDescription>Primeras 5 filas del dataset cargado</CardDescription>
+              </div>
+              <Badge className="bg-success/10 text-success border-success/20">
+                5 filas • 4 columnas
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border border-border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>ID</TableHead>
+                    <TableHead>Producto</TableHead>
+                    <TableHead>Cantidad</TableHead>
+                    <TableHead>Precio</TableHead>
+                    <TableHead>Categoría</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {previewData.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium">{row.id}</TableCell>
+                      <TableCell>{row.producto}</TableCell>
+                      <TableCell>{row.cantidad}</TableCell>
+                      <TableCell>${row.precio.toFixed(2)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+                          {row.categoria}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="bg-gradient-card border-border shadow-card">
         <CardHeader>
