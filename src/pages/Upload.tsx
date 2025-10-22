@@ -50,14 +50,14 @@ const UploadPage = () => {
     try {
       const userId = getUserId();
       const response = await fetch(`${BACKEND_URL}/datasets/${userId}`);
-      
+
       if (!response.ok) {
         throw new Error("Error al obtener datasets");
       }
 
       const data = await response.json();
       setDatasets(data.datasets);
-      
+
       console.log("✅ Datasets cargados:", data);
     } catch (error: any) {
       console.error("❌ Error al cargar datasets:", error);
@@ -106,7 +106,7 @@ const UploadPage = () => {
 
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!selectedFile) {
       toast({
         title: "No hay archivo",
@@ -142,7 +142,7 @@ const UploadPage = () => {
 
       // Limpiar formulario
       setSelectedFile(null);
-      
+
       // Recargar lista de datasets
       await fetchUserDatasets();
 
@@ -180,11 +180,11 @@ const UploadPage = () => {
     if (diffMins < 60) return `Hace ${diffMins} min`;
     if (diffHours < 24) return `Hace ${diffHours} hora${diffHours > 1 ? 's' : ''}`;
     if (diffDays < 7) return `Hace ${diffDays} día${diffDays > 1 ? 's' : ''}`;
-    
-    return date.toLocaleDateString('es-ES', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
+
+    return date.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
     });
   };
 
@@ -232,7 +232,16 @@ const UploadPage = () => {
               <form onSubmit={handleFileUpload} className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="file">Selecciona un archivo</Label>
-                  <div className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:border-primary/50 transition-colors cursor-pointer bg-muted/30">
+                  <div
+                    className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:border-primary/50 transition-colors cursor-pointer bg-muted/30"
+                    onClick={() => document.getElementById('file')?.click()}  // abrir selector al click
+                    onDragOver={(e) => e.preventDefault()}                   // permitir drop
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files[0];
+                      if (file) handleFileSelect({ target: { files: [file] } } as any);
+                    }}
+                  >
                     {selectedFile ? (
                       <div className="space-y-3">
                         <CheckCircle className="h-12 w-12 mx-auto text-success" />
@@ -242,9 +251,9 @@ const UploadPage = () => {
                             {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                           </p>
                         </div>
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           size="sm"
                           onClick={() => setSelectedFile(null)}
                         >
@@ -264,9 +273,9 @@ const UploadPage = () => {
                           className="hidden"
                           onChange={handleFileSelect}
                         />
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                        <Button
+                          type="button"
+                          variant="outline"
                           onClick={() => document.getElementById('file')?.click()}
                         >
                           Seleccionar Archivo
@@ -276,8 +285,8 @@ const UploadPage = () => {
                   </div>
                 </div>
 
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   className="w-full bg-gradient-primary hover:opacity-90 text-primary-foreground"
                   disabled={!selectedFile || isUploading}
                 >
@@ -370,8 +379,8 @@ const UploadPage = () => {
                 {datasets.length} dataset{datasets.length !== 1 ? 's' : ''} cargado{datasets.length !== 1 ? 's' : ''}
               </CardDescription>
             </div>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
               onClick={fetchUserDatasets}
               disabled={isLoadingDatasets}
@@ -398,8 +407,8 @@ const UploadPage = () => {
           ) : (
             <div className="space-y-3">
               {datasets.map((dataset) => (
-                <div 
-                  key={dataset.id} 
+                <div
+                  key={dataset.id}
                   className="flex items-center justify-between p-4 border border-border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex items-center gap-3 flex-1">
@@ -436,7 +445,7 @@ const UploadPage = () => {
             </div>
           )}
         </CardContent>
-      </Card> 
+      </Card>
     </div>
   );
 };
