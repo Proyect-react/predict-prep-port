@@ -58,6 +58,8 @@ const CleanPage = () => {
   const [originalData, setOriginalData] = useState<AnalysisResponse | null>(null);
   const [previewData, setPreviewData] = useState<AnalysisResponse | null>(null);
   const [columnNames, setColumnNames] = useState<string[]>([]);
+  const [numericColumns, setNumericColumns] = useState<Set<string>>(new Set());
+
 
   // Operaciones pendientes
   const [pendingOperations, setPendingOperations] = useState<PendingOperation[]>([]);
@@ -138,7 +140,34 @@ const CleanPage = () => {
       const cols = Object.keys(data.columns_info);
 
       // Revisar si preview_data tiene 'status'
-      if (data.preview_data.length > 0 && data.preview_data[0].hasOwnProperty('status')) {
+      // Identificar columnas numéricas
+      const numericCols = new Set<string>();
+      for (const [colName, colInfo] of Object.entries(data.columns_info)) {
+        if ((colInfo as ColumnInfo).is_numeric) {
+          numericCols.add(colName);
+        }
+      }
+      setNumericColumns(numericCols);
+
+      // Agregar columna 'status' basada en si hay NULL en columnas numéricas
+      data.preview_data = data.preview_data.map((row: any) => {
+        // Verificar si tiene NULL en alguna columna numérica
+        let hasNumericNull = false;
+        for (const colName of numericColumns) {
+          if (row[colName] === null || row[colName] === undefined) {
+            hasNumericNull = true;
+            break;
+          }
+        }
+
+        return {
+          ...row,
+          status: hasNumericNull ? 'inactive' : 'active'
+        };
+      });
+
+      // Agregar 'status' a las columnas
+      if (!cols.includes('status')) {
         cols.push('status');
       }
 
@@ -161,22 +190,40 @@ const CleanPage = () => {
 
     if (operation === "replace_nulls") {
       operationLabel = "Reemplazar NULL con N/A";
-
-      // Reemplazar todos los nulls en todas las columnas
+    
       newPreview.preview_data = newPreview.preview_data.map((row: any) => {
         const newRow: any = {};
+        // Guardar el status original antes de cambiar nulls
+        const originalStatus = row.status || "active";
+    
         for (const key in row) {
-          newRow[key] = row[key] === null || row[key] === undefined ? "N/A" : row[key];
+          if (key === "status") continue; // ignorar status por ahora
+    
+          const value = row[key];
+          if (value === null || value === undefined) {
+            newRow[key] = "N/A"; // reemplazar nulls
+          } else {
+            newRow[key] = value;
+          }
         }
+    
+        // Mantener el status original
+        newRow.status = originalStatus;
+    
         return newRow;
       });
-
+    
+      // Actualizar columnNames para incluir status
+      if (!columnNames.includes("status")) {
+        setColumnNames([...columnNames, "status"]);
+      }
+    
       // Actualizar estadísticas de columnas
       for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
         (colInfo as ColumnInfo).nulls = 0;
         (colInfo as ColumnInfo).null_percentage = 0;
       }
-
+    
       // Recalcular total_nulls
       newPreview.total_nulls = 0;
     }
@@ -491,7 +538,27 @@ const CleanPage = () => {
                             <TableCell className="font-medium">{row._id}</TableCell>
                             {columnNames.map(col => (
                               <TableCell key={col}>
-                                {row[col] === null || row[col] === undefined ? (
+                                {col === "status" ? (
+                                  (() => {
+                                    // Verificar si hay NULL en alguna columna numérica
+                                    const hasNullInNumeric = Array.from(numericColumns).some(numCol =>
+                                      row[numCol] === null || row[numCol] === undefined
+                                    );
+
+                                    return (
+                                      <Badge
+                                        variant="outline"
+                                        className={
+                                          hasNullInNumeric
+                                            ? "bg-destructive/10 text-destructive border-destructive/20"
+                                            : "bg-success/10 text-success border-success/20"
+                                        }
+                                      >
+                                        {hasNullInNumeric ? "Inactivo" : "Activo"}
+                                      </Badge>
+                                    );
+                                  })()
+                                ) : row[col] === null || row[col] === undefined ? (
                                   <Badge variant="outline" className="bg-destructive/10 text-destructive">
                                     NULL
                                   </Badge>
