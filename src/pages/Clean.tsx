@@ -5,7 +5,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Database, AlertCircle, CheckCircle, Trash2, RefreshCw, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Database, AlertCircle, CheckCircle, Trash2, RefreshCw, Loader2, TrendingUp, Code } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 
@@ -36,7 +37,7 @@ interface AnalysisResponse {
   total_columns: number;
   columns_info: Record<string, ColumnInfo>;
   total_nulls: number;
-  preview_data: any[];  // 🆕 Datos reales desde el backend
+  preview_data: any[];
 }
 
 interface CleanResponse {
@@ -48,6 +49,7 @@ interface CleanResponse {
   cleaned_rows: number;
   columns_with_nulls: Record<string, any>;
   status_changes: Record<string, string>;
+  operations_applied: string[];
 }
 
 const CleanPage = () => {
@@ -59,18 +61,20 @@ const CleanPage = () => {
   const [isLoadingDatasets, setIsLoadingDatasets] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1)
+  const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 5;
 
   // Datos del análisis
   const [analysisData, setAnalysisData] = useState<AnalysisResponse | null>(null);
-  const [previewData, setPreviewData] = useState<any[]>([]);
   const [columnNames, setColumnNames] = useState<string[]>([]);
+  
+  // Estados para diálogos de operaciones
+  const [isImputeDialogOpen, setIsImputeDialogOpen] = useState(false);
+  const [imputeMethod, setImputeMethod] = useState<string>("mean");
+
   const indexOfLastRow = currentPage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
   const currentRows = analysisData?.preview_data.slice(indexOfFirstRow, indexOfLastRow) || [];
-  
-
 
   const getUserId = () => {
     let userId = localStorage.getItem("user_id");
@@ -88,14 +92,7 @@ const CleanPage = () => {
 
   useEffect(() => {
     if (selectedDatasetId) {
-      setCurrentPage(1); // Reinicia paginación
-      analyzeDataset(selectedDatasetId);
-    }
-  }, [selectedDatasetId]);
-
-  // Analizar cuando se selecciona un dataset
-  useEffect(() => {
-    if (selectedDatasetId) {
+      setCurrentPage(1);
       analyzeDataset(selectedDatasetId);
     }
   }, [selectedDatasetId]);
@@ -111,7 +108,6 @@ const CleanPage = () => {
       const data = await response.json();
       setDatasets(data.datasets);
 
-      // Seleccionar el primero automáticamente
       if (data.datasets.length > 0 && !selectedDatasetId) {
         setSelectedDatasetId(data.datasets[0].id);
       }
@@ -129,15 +125,10 @@ const CleanPage = () => {
   const analyzeDataset = async (datasetId: string) => {
     setIsAnalyzing(true);
 
-    // 🐛 DEBUG: Ver qué estamos enviando
     const payload = {
       user_id: getUserId(),
       dataset_id: datasetId
     };
-
-    console.log("🔍 Analizando dataset...");
-    console.log("📦 Payload:", payload);
-    console.log("🌐 URL:", `${BACKEND_URL}/analyze`);
 
     try {
       const response = await fetch(`${BACKEND_URL}/analyze`, {
@@ -146,28 +137,21 @@ const CleanPage = () => {
         body: JSON.stringify(payload)
       });
 
-      // 🐛 DEBUG: Ver la respuesta
-      console.log("📡 Response Status:", response.status);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("❌ Error Response:", errorText);
         throw new Error(`Error ${response.status}: ${errorText}`);
       }
 
       const data: AnalysisResponse = await response.json();
-      console.log("✅ Analysis Data:", data);
 
       setAnalysisData(data);
       setColumnNames(Object.keys(data.columns_info));
-      setPreviewData(data.preview_data);
 
       toast({
         title: "Análisis completado",
         description: `${data.total_rows} filas, ${data.total_columns} columnas, ${data.total_nulls} valores nulos`
       });
     } catch (error: any) {
-      console.error("💥 Error completo:", error);
       toast({
         title: "Error al analizar",
         description: error.message,
@@ -178,35 +162,7 @@ const CleanPage = () => {
     }
   };
 
-  const generatePreviewData = (analysis: AnalysisResponse) => {
-    // Generar 10 filas de ejemplo
-    const rows = [];
-    for (let i = 0; i < Math.min(10, analysis.total_rows); i++) {
-      const row: any = { _id: i + 1 };
-
-      Object.entries(analysis.columns_info).forEach(([colName, colInfo]) => {
-        // Simular algunos valores null según el porcentaje
-        const hasNull = Math.random() * 100 < colInfo.null_percentage;
-
-        if (hasNull) {
-          row[colName] = null;
-        } else {
-          // Generar valor según tipo
-          if (colInfo.is_numeric) {
-            row[colName] = Math.floor(Math.random() * 100) + 1;
-          } else {
-            row[colName] = `Valor ${i + 1}`;
-          }
-        }
-      });
-
-      rows.push(row);
-    }
-
-    setPreviewData(rows);
-  };
-
-  const handleClean = async () => {
+  const handleCleanOperation = async (operation: string, options?: any) => {
     if (!selectedDatasetId) {
       toast({
         title: "No hay dataset seleccionado",
@@ -223,7 +179,8 @@ const CleanPage = () => {
         body: JSON.stringify({
           user_id: getUserId(),
           dataset_id: selectedDatasetId,
-          replace_nulls: true
+          operation,
+          options
         })
       });
 
@@ -233,7 +190,7 @@ const CleanPage = () => {
 
       toast({
         title: "✅ Limpieza completada",
-        description: `Dataset limpio creado: ${data.cleaned_dataset_id}`
+        description: `${data.operations_applied.join(", ")} aplicado. Dataset limpio: ${data.cleaned_dataset_id}`
       });
 
       // Reanalizar después de limpiar
@@ -265,7 +222,6 @@ const CleanPage = () => {
   const stats = calculateStats();
 
   const getRowStatus = (row: any) => {
-    // Una fila es "inactive" si tiene NULL en alguna columna numérica
     for (const [colName, colInfo] of Object.entries(analysisData?.columns_info || {})) {
       if (colInfo.is_numeric && (row[colName] === null || row[colName] === "N/A")) {
         return "inactive";
@@ -380,7 +336,7 @@ const CleanPage = () => {
               <Card className="bg-gradient-card border-border shadow-card">
                 <CardHeader>
                   <CardTitle className="text-foreground">Muestra del Dataset</CardTitle>
-                  <CardDescription>Mostrando primeras 10 filas de {stats.totalRecords} totales</CardDescription>
+                  <CardDescription>Mostrando primeras filas de {stats.totalRecords} totales</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="rounded-md border border-border overflow-x-auto">
@@ -426,25 +382,25 @@ const CleanPage = () => {
                         })}
                       </TableBody>
                     </Table>
-                    <div className="flex justify-between items-center mt-2">
-                        <Button
-                          size="sm"
-                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                          disabled={currentPage === 1}
-                        >
-                          Anterior
-                        </Button>
-                        <span className="text-sm text-muted-foreground">
-                          Página {currentPage} de {Math.ceil(previewData.length / rowsPerPage)}
-                        </span>
-                        <Button
-                          size="sm"
-                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(previewData.length / rowsPerPage)))}
-                          disabled={currentPage === Math.ceil(previewData.length / rowsPerPage)}
-                        >
-                          Siguiente
-                        </Button>
-                      </div>
+                    <div className="flex justify-between items-center mt-4 p-4 border-t">
+                      <Button
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Anterior
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        Página {currentPage} de {Math.ceil(analysisData.preview_data.length / rowsPerPage)}
+                      </span>
+                      <Button
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(analysisData.preview_data.length / rowsPerPage)))}
+                        disabled={currentPage === Math.ceil(analysisData.preview_data.length / rowsPerPage)}
+                      >
+                        Siguiente
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -489,18 +445,19 @@ const CleanPage = () => {
               <Card className="bg-gradient-card border-border shadow-card">
                 <CardHeader>
                   <CardTitle className="text-foreground">Operaciones de Limpieza</CardTitle>
-                  <CardDescription>Aplica transformaciones con pandas</CardDescription>
+                  <CardDescription>Aplica transformaciones con pandas y sklearn</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {/* Reemplazar valores nulos */}
                   <Button
                     className="w-full justify-start bg-gradient-primary hover:opacity-90 text-primary-foreground"
-                    onClick={handleClean}
+                    onClick={() => handleCleanOperation("replace_nulls")}
                     disabled={isCleaning}
                   >
                     {isCleaning ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Limpiando...
+                        Procesando...
                       </>
                     ) : (
                       <>
@@ -509,24 +466,101 @@ const CleanPage = () => {
                       </>
                     )}
                   </Button>
-                  <Button variant="outline" className="w-full justify-start" disabled={isCleaning}>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Imputar con media/mediana
-                  </Button>
-                  <Button variant="outline" className="w-full justify-start" disabled={isCleaning}>
-                    <Database className="h-4 w-4 mr-2" />
+
+                  {/* Imputar con media/mediana */}
+                  <Dialog open={isImputeDialogOpen} onOpenChange={setIsImputeDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        className="w-full justify-start" 
+                        disabled={isCleaning}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Imputar con media/mediana
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Imputar valores nulos</DialogTitle>
+                        <DialogDescription>
+                          Selecciona el método para rellenar valores nulos en columnas numéricas
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="impute-method">Método de imputación</Label>
+                          <Select value={imputeMethod} onValueChange={setImputeMethod}>
+                            <SelectTrigger id="impute-method">
+                              <SelectValue placeholder="Selecciona un método" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="mean">Media (promedio)</SelectItem>
+                              <SelectItem value="median">Mediana (valor central)</SelectItem>
+                              <SelectItem value="mode">Moda (valor más frecuente)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={() => {
+                            handleCleanOperation("impute", { method: imputeMethod });
+                            setIsImputeDialogOpen(false);
+                          }}
+                          disabled={isCleaning}
+                        >
+                          {isCleaning ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Imputando...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              Aplicar Imputación
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  {/* Normalizar datos */}
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-start" 
+                    disabled={isCleaning}
+                    onClick={() => handleCleanOperation("normalize")}
+                  >
+                    <TrendingUp className="h-4 w-4 mr-2" />
                     Normalizar datos (StandardScaler)
                   </Button>
-                  <Button variant="outline" className="w-full justify-start" disabled={isCleaning}>
-                    <CheckCircle className="h-4 w-4 mr-2" />
+
+                  {/* Codificar variables categóricas */}
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-start" 
+                    disabled={isCleaning}
+                    onClick={() => handleCleanOperation("encode")}
+                  >
+                    <Code className="h-4 w-4 mr-2" />
                     Codificar variables categóricas
                   </Button>
+
+                  <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-border">
+                    <h4 className="font-medium text-sm mb-2 text-foreground">ℹ️ Información</h4>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      <li>• <strong>Reemplazar con N/A:</strong> Marca filas con nulls como inactivas</li>
+                      <li>• <strong>Imputar:</strong> Rellena nulls con media/mediana/moda</li>
+                      <li>• <strong>Normalizar:</strong> Escala valores numéricos con StandardScaler</li>
+                      <li>• <strong>Codificar:</strong> Convierte variables categóricas a numéricas</li>
+                    </ul>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
           </Tabs>
         </>
-      )}
+      )}.
     </div>
   );
 };
