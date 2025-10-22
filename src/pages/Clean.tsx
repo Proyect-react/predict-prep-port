@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -54,16 +55,12 @@ const CleanPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 5;
 
-  // Datos originales y modificados
   const [originalData, setOriginalData] = useState<AnalysisResponse | null>(null);
   const [previewData, setPreviewData] = useState<AnalysisResponse | null>(null);
   const [columnNames, setColumnNames] = useState<string[]>([]);
   const [numericColumns, setNumericColumns] = useState<Set<string>>(new Set());
-
-  // Operaciones pendientes
   const [pendingOperations, setPendingOperations] = useState<PendingOperation[]>([]);
 
-  // Diálogos
   const [isImputeDialogOpen, setIsImputeDialogOpen] = useState(false);
   const [imputeMethod, setImputeMethod] = useState<string>("mean");
 
@@ -96,12 +93,9 @@ const CleanPage = () => {
     try {
       const userId = getUserId();
       const response = await fetch(`${BACKEND_URL}/datasets/${userId}`);
-
       if (!response.ok) throw new Error("Error al obtener datasets");
-
       const data = await response.json();
       setDatasets(data.datasets);
-
       if (data.datasets.length > 0 && !selectedDatasetId) {
         setSelectedDatasetId(data.datasets[0].id);
       }
@@ -114,11 +108,7 @@ const CleanPage = () => {
 
   const analyzeDataset = async (datasetId: string) => {
     setIsAnalyzing(true);
-
-    const payload = {
-      user_id: getUserId(),
-      dataset_id: datasetId
-    };
+    const payload = { user_id: getUserId(), dataset_id: datasetId };
 
     try {
       const response = await fetch(`${BACKEND_URL}/analyze`, {
@@ -127,13 +117,9 @@ const CleanPage = () => {
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`Error ${response.status}`);
       const data: AnalysisResponse = await response.json();
 
-      // Identificar columnas numéricas primero
       const numericCols = new Set<string>();
       for (const [colName, colInfo] of Object.entries(data.columns_info)) {
         if ((colInfo as ColumnInfo).is_numeric) {
@@ -142,7 +128,6 @@ const CleanPage = () => {
       }
       setNumericColumns(numericCols);
 
-      // Agregar columna 'status' basada en si hay NULL en columnas numéricas
       data.preview_data = data.preview_data.map((row: any) => {
         let hasNumericNull = false;
         for (const colName of numericCols) {
@@ -151,19 +136,13 @@ const CleanPage = () => {
             break;
           }
         }
-        return {
-          ...row,
-          status: hasNumericNull ? 'inactive' : 'active'
-        };
+        return { ...row, status: hasNumericNull ? 'inactive' : 'active' };
       });
 
-      // Guardar datos originales y crear copia para preview
       setOriginalData(JSON.parse(JSON.stringify(data)));
       setPreviewData(JSON.parse(JSON.stringify(data)));
       const cols = Object.keys(data.columns_info);
-      if (!cols.includes('status')) {
-        cols.push('status');
-      }
+      if (!cols.includes('status')) cols.push('status');
       setColumnNames(cols);
       setPendingOperations([]);
     } catch (error: any) {
@@ -171,6 +150,30 @@ const CleanPage = () => {
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  // 🔥 FUNCIÓN CLAVE: Calcular valores reales para imputación
+  const calculateImputedValue = (columnName: string, method: string, allRows: any[]) => {
+    const values = allRows
+      .map(row => row[columnName])
+      .filter(val => val !== null && val !== undefined && typeof val === 'number');
+
+    if (values.length === 0) return 0;
+
+    if (method === 'mean') {
+      return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+    } else if (method === 'median') {
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0 
+        ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+        : sorted[mid];
+    } else if (method === 'mode') {
+      const freq: Record<number, number> = {};
+      values.forEach(v => freq[v] = (freq[v] || 0) + 1);
+      return Number(Object.keys(freq).reduce((a, b) => freq[Number(a)] > freq[Number(b)] ? a : b));
+    }
+    return 0;
   };
 
   const applyLocalOperation = (operation: string, options?: any) => {
@@ -188,7 +191,6 @@ const CleanPage = () => {
           const value = row[key];
           newRow[key] = value === null || value === undefined ? "N/A" : value;
         }
-        // Mantener o recalcular status basado en columnas numéricas
         let hasNumericNull = false;
         for (const colName of numericColumns) {
           if (newRow[colName] === "N/A") {
@@ -200,7 +202,6 @@ const CleanPage = () => {
         return newRow;
       });
 
-      // Actualizar estadísticas de columnas
       for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
         const typedColInfo = colInfo as ColumnInfo;
         typedColInfo.nulls = 0;
@@ -210,14 +211,25 @@ const CleanPage = () => {
     }
 
     if (operation === "impute") {
-      operationLabel = `Imputar con ${options?.method || 'mean'}`;
+      const method = options?.method || 'mean';
+      operationLabel = `Imputar con ${method}`;
+      
+      // 🔥 Calcular valores imputados REALES para cada columna numérica
+      const imputedValues: Record<string, number> = {};
+      for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
+        const typedColInfo = colInfo as ColumnInfo;
+        if (typedColInfo.is_numeric) {
+          imputedValues[colName] = calculateImputedValue(colName, method, newPreview.preview_data);
+        }
+      }
+
       newPreview.preview_data = newPreview.preview_data.map((row: any) => {
         const newRow = { ...row };
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
           if (typedColInfo.is_numeric && (newRow[colName] === null || newRow[colName] === undefined)) {
-            // Simular imputación con un valor calculado aproximado
-            newRow[colName] = `[${options?.method || 'mean'} imputed: ${Math.round(Math.random() * 100)}]`;
+            // 🔥 Usar el valor calculado, no texto descriptivo
+            newRow[colName] = imputedValues[colName];
           }
         }
         // Recalcular status
@@ -245,14 +257,33 @@ const CleanPage = () => {
 
     if (operation === "normalize") {
       operationLabel = "Normalizar con StandardScaler";
+      
+      // 🔥 Calcular mean y std para cada columna numérica
+      const stats: Record<string, { mean: number; std: number }> = {};
+      for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
+        const typedColInfo = colInfo as ColumnInfo;
+        if (typedColInfo.is_numeric) {
+          const values = newPreview.preview_data
+            .map((row: any) => row[colName])
+            .filter((val: any) => val !== null && val !== undefined && typeof val === 'number');
+          
+          if (values.length > 0) {
+            const mean = values.reduce((a: number, b: number) => a + b, 0) / values.length;
+            const variance = values.reduce((a: number, b: number) => a + Math.pow(b - mean, 2), 0) / values.length;
+            const std = Math.sqrt(variance);
+            stats[colName] = { mean, std: std || 1 }; // Evitar división por cero
+          }
+        }
+      }
+
       newPreview.preview_data = newPreview.preview_data.map((row: any) => {
         const newRow = { ...row };
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
-          if (typedColInfo.is_numeric && typeof newRow[colName] === 'number') {
-            // Simular normalización con un valor transformado
-            const normalizedValue = (newRow[colName] - Math.random() * 50) / (Math.random() * 10 + 1); // Simulación simple
-            newRow[colName] = `[norm: ${normalizedValue.toFixed(2)}]`;
+          if (typedColInfo.is_numeric && typeof newRow[colName] === 'number' && stats[colName]) {
+            // 🔥 Aplicar normalización Z-score real
+            const normalized = (newRow[colName] - stats[colName].mean) / stats[colName].std;
+            newRow[colName] = Math.round(normalized * 100) / 100; // 2 decimales
           }
         }
         return newRow;
@@ -261,14 +292,31 @@ const CleanPage = () => {
 
     if (operation === "encode") {
       operationLabel = "Codificar variables categóricas";
+      
+      // 🔥 Crear mapeo real para cada columna categórica
+      const encodings: Record<string, Record<string, number>> = {};
+      for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
+        const typedColInfo = colInfo as ColumnInfo;
+        if (!typedColInfo.is_numeric) {
+          const uniqueValues = [...new Set(
+            newPreview.preview_data
+              .map((row: any) => row[colName])
+              .filter((val: any) => val !== null && val !== undefined)
+          )];
+          encodings[colName] = {};
+          uniqueValues.forEach((val: any, idx: number) => {
+            encodings[colName][String(val)] = idx;
+          });
+        }
+      }
+
       newPreview.preview_data = newPreview.preview_data.map((row: any) => {
         const newRow = { ...row };
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
-          if (!typedColInfo.is_numeric && typeof newRow[colName] === 'string') {
-            // Simular codificación con un valor numérico aleatorio
-            const encodedValue = Math.floor(Math.random() * 10);
-            newRow[colName] = `[encoded: ${encodedValue}]`;
+          if (!typedColInfo.is_numeric && typeof newRow[colName] === 'string' && encodings[colName]) {
+            // 🔥 Usar el código numérico real
+            newRow[colName] = encodings[colName][newRow[colName]] ?? 0;
           }
         }
         return newRow;
@@ -307,13 +355,12 @@ const CleanPage = () => {
         });
 
         if (!response.ok) throw new Error("Error al aplicar operación");
-
         const data = await response.json();
         console.log("✅ Operación aplicada:", data);
       }
 
       console.log("✅ Todos los cambios guardados");
-      await analyzeDataset(selectedDatasetId); // Recarga el dataset original
+      await analyzeDataset(selectedDatasetId);
     } catch (error: any) {
       console.error("Error:", error);
     } finally {
@@ -323,10 +370,8 @@ const CleanPage = () => {
 
   const calculateStats = () => {
     if (!previewData) return { totalRecords: 0, totalNulls: 0, qualityPercent: "0" };
-
     const totalCells = previewData.total_rows * previewData.total_columns;
     const qualityPercent = ((totalCells - previewData.total_nulls) / totalCells * 100).toFixed(1);
-
     return {
       totalRecords: previewData.total_rows,
       totalNulls: previewData.total_nulls,
@@ -396,20 +441,11 @@ const CleanPage = () => {
                   <CardTitle className="text-foreground">Operaciones Pendientes</CardTitle>
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={resetPreview}
-                  >
+                  <Button variant="outline" size="sm" onClick={resetPreview}>
                     <RotateCcw className="h-4 w-4 mr-2" />
                     Resetear
                   </Button>
-                  <Button
-                    size="sm"
-                    className="bg-gradient-primary"
-                    onClick={saveChanges}
-                    disabled={isSaving}
-                  >
+                  <Button size="sm" className="bg-gradient-primary" onClick={saveChanges} disabled={isSaving}>
                     {isSaving ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -539,10 +575,6 @@ const CleanPage = () => {
                                 ) : row[col] === "N/A" ? (
                                   <Badge variant="outline" className="bg-warning/10 text-warning">
                                     N/A
-                                  </Badge>
-                                ) : String(row[col]).startsWith('[') ? (
-                                  <Badge variant="outline" className="bg-accent/10 text-accent">
-                                    {row[col]}
                                   </Badge>
                                 ) : (
                                   row[col]
