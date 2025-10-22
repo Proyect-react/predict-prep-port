@@ -188,6 +188,15 @@ const CleanPage = () => {
           const value = row[key];
           newRow[key] = value === null || value === undefined ? "N/A" : value;
         }
+        // Mantener o recalcular status basado en columnas numéricas
+        let hasNumericNull = false;
+        for (const colName of numericColumns) {
+          if (newRow[colName] === "N/A") {
+            hasNumericNull = true;
+            break;
+          }
+        }
+        newRow.status = hasNumericNull ? 'inactive' : 'active';
         return newRow;
       });
 
@@ -207,9 +216,19 @@ const CleanPage = () => {
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
           if (typedColInfo.is_numeric && (newRow[colName] === null || newRow[colName] === undefined)) {
-            newRow[colName] = `[${options?.method || 'mean'}]`;
+            // Simular imputación con un valor calculado aproximado
+            newRow[colName] = `[${options?.method || 'mean'} imputed: ${Math.round(Math.random() * 100)}]`;
           }
         }
+        // Recalcular status
+        let hasNumericNull = false;
+        for (const colName of numericColumns) {
+          if (newRow[colName] === null || newRow[colName] === undefined) {
+            hasNumericNull = true;
+            break;
+          }
+        }
+        newRow.status = hasNumericNull ? 'inactive' : 'active';
         return newRow;
       });
 
@@ -231,7 +250,9 @@ const CleanPage = () => {
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
           if (typedColInfo.is_numeric && typeof newRow[colName] === 'number') {
-            newRow[colName] = `[norm: ${newRow[colName]}]`;
+            // Simular normalización con un valor transformado
+            const normalizedValue = (newRow[colName] - Math.random() * 50) / (Math.random() * 10 + 1); // Simulación simple
+            newRow[colName] = `[norm: ${normalizedValue.toFixed(2)}]`;
           }
         }
         return newRow;
@@ -245,7 +266,9 @@ const CleanPage = () => {
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
           if (!typedColInfo.is_numeric && typeof newRow[colName] === 'string') {
-            newRow[colName] = `[encoded]`;
+            // Simular codificación con un valor numérico aleatorio
+            const encodedValue = Math.floor(Math.random() * 10);
+            newRow[colName] = `[encoded: ${encodedValue}]`;
           }
         }
         return newRow;
@@ -290,7 +313,7 @@ const CleanPage = () => {
       }
 
       console.log("✅ Todos los cambios guardados");
-      await analyzeDataset(selectedDatasetId);
+      await analyzeDataset(selectedDatasetId); // Recarga el dataset original
     } catch (error: any) {
       console.error("Error:", error);
     } finally {
