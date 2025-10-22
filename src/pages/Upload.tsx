@@ -3,32 +3,72 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Database, Link as LinkIcon, FileText, CheckCircle, AlertCircle } from "lucide-react";
+import { Upload, Database, Link as LinkIcon, FileText, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 // Configuración del backend
 const BACKEND_URL = "http://localhost:8000/api";
 
+interface Dataset {
+  id: string;
+  name: string;
+  file_type: string;
+  file_size: number;
+  file_size_mb: number;
+  num_rows: number;
+  num_columns: number;
+  uploaded_at: string;
+  file_path: string;
+}
+
 const UploadPage = () => {
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadResponse, setUploadResponse] = useState<any>(null);
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [isLoadingDatasets, setIsLoadingDatasets] = useState(true);
 
   // Generar un user_id único (en producción esto vendría del sistema de autenticación)
   const getUserId = () => {
     let userId = localStorage.getItem("user_id");
     if (!userId) {
-      // Generar UUID v4
       userId = crypto.randomUUID();
       localStorage.setItem("user_id", userId);
     }
     return userId;
+  };
+
+  // Cargar datasets al montar el componente
+  useEffect(() => {
+    fetchUserDatasets();
+  }, []);
+
+  const fetchUserDatasets = async () => {
+    setIsLoadingDatasets(true);
+    try {
+      const userId = getUserId();
+      const response = await fetch(`${BACKEND_URL}/datasets/${userId}`);
+      
+      if (!response.ok) {
+        throw new Error("Error al obtener datasets");
+      }
+
+      const data = await response.json();
+      setDatasets(data.datasets);
+      
+      console.log("✅ Datasets cargados:", data);
+    } catch (error: any) {
+      console.error("❌ Error al cargar datasets:", error);
+      toast({
+        title: "Error al cargar datasets",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoadingDatasets(false);
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,7 +86,7 @@ const UploadPage = () => {
       }
 
       // Validar tamaño (50MB)
-      const maxSize = 50 * 1024 * 1024; // 50MB en bytes
+      const maxSize = 50 * 1024 * 1024;
       if (file.size > maxSize) {
         toast({
           title: "Archivo muy grande",
@@ -79,12 +119,10 @@ const UploadPage = () => {
     setIsUploading(true);
 
     try {
-      // Crear FormData
       const formData = new FormData();
       formData.append("file", selectedFile);
       formData.append("user_id", getUserId());
 
-      // Enviar al backend
       const response = await fetch(`${BACKEND_URL}/upload`, {
         method: "POST",
         body: formData,
@@ -96,15 +134,17 @@ const UploadPage = () => {
       }
 
       const data = await response.json();
-      
-      setUploadedFile(data.file_name);
-      setShowPreview(true);
-      setUploadResponse(data);
 
       toast({
         title: "✅ Archivo cargado exitosamente",
         description: `${data.file_name} - ${data.rows} filas, ${data.columns} columnas`,
       });
+
+      // Limpiar formulario
+      setSelectedFile(null);
+      
+      // Recargar lista de datasets
+      await fetchUserDatasets();
 
       console.log("✅ Upload Response:", data);
 
@@ -126,6 +166,40 @@ const UploadPage = () => {
       title: "Conectado a base de datos",
       description: "La conexión se estableció exitosamente.",
     });
+  };
+
+  const formatDate = (isoDate: string) => {
+    const date = new Date(isoDate);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Hace un momento";
+    if (diffMins < 60) return `Hace ${diffMins} min`;
+    if (diffHours < 24) return `Hace ${diffHours} hora${diffHours > 1 ? 's' : ''}`;
+    if (diffDays < 7) return `Hace ${diffDays} día${diffDays > 1 ? 's' : ''}`;
+    
+    return date.toLocaleDateString('es-ES', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  const getFileIcon = (fileType: string) => {
+    switch (fileType.toLowerCase()) {
+      case 'csv':
+        return '📊';
+      case 'xlsx':
+      case 'xls':
+        return '📈';
+      case 'json':
+        return '📋';
+      default:
+        return '📄';
+    }
   };
 
   return (
@@ -209,7 +283,7 @@ const UploadPage = () => {
                 >
                   {isUploading ? (
                     <>
-                      <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Subiendo...
                     </>
                   ) : (
@@ -284,32 +358,83 @@ const UploadPage = () => {
         </TabsContent>
       </Tabs>
 
-<Card className="bg-gradient-card border-border shadow-card">
+      <Card className="bg-gradient-card border-border shadow-card">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-foreground">
-            <FileText className="h-5 w-5" />
-            Datasets Disponibles
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-foreground">
+                <FileText className="h-5 w-5" />
+                Datasets Disponibles
+              </CardTitle>
+              <CardDescription>
+                {datasets.length} dataset{datasets.length !== 1 ? 's' : ''} cargado{datasets.length !== 1 ? 's' : ''}
+              </CardDescription>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={fetchUserDatasets}
+              disabled={isLoadingDatasets}
+            >
+              {isLoadingDatasets ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Actualizar"
+              )}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {["sales_2024.csv", "customer_data.json", "product_inventory.xlsx"].map((file) => (
-              <div key={file} className="flex items-center justify-between p-4 border border-border rounded-lg bg-muted/30">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                    <FileText className="h-5 w-5 text-primary" />
+          {isLoadingDatasets ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : datasets.length === 0 ? (
+            <div className="text-center py-12">
+              <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+              <p className="text-muted-foreground">No hay datasets disponibles</p>
+              <p className="text-sm text-muted-foreground mt-2">Sube tu primer archivo para comenzar</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {datasets.map((dataset) => (
+                <div 
+                  key={dataset.id} 
+                  className="flex items-center justify-between p-4 border border-border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-2xl">
+                      {getFileIcon(dataset.file_type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground truncate">{dataset.name}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <p className="text-xs text-muted-foreground">
+                          {dataset.num_rows.toLocaleString()} filas × {dataset.num_columns} columnas
+                        </p>
+                        <span className="text-muted-foreground">•</span>
+                        <p className="text-xs text-muted-foreground">
+                          {dataset.file_size_mb} MB
+                        </p>
+                        <span className="text-muted-foreground">•</span>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(dataset.uploaded_at)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-foreground">{file}</p>
-                    <p className="text-xs text-muted-foreground">Subido hace 2 horas</p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-success/10 text-success border-success/20">
+                      {dataset.file_type.toUpperCase()}
+                    </Badge>
+                    <Button variant="outline" size="sm">
+                      Ver Detalles
+                    </Button>
                   </div>
                 </div>
-                <Button variant="outline" size="sm">
-                  Ver Detalles
-                </Button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card> 
     </div>
