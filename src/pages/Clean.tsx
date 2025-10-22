@@ -60,7 +60,6 @@ const CleanPage = () => {
   const [columnNames, setColumnNames] = useState<string[]>([]);
   const [numericColumns, setNumericColumns] = useState<Set<string>>(new Set());
 
-
   // Operaciones pendientes
   const [pendingOperations, setPendingOperations] = useState<PendingOperation[]>([]);
 
@@ -134,13 +133,7 @@ const CleanPage = () => {
 
       const data: AnalysisResponse = await response.json();
 
-      // Guardar datos originales y crear copia para preview
-      setOriginalData(JSON.parse(JSON.stringify(data)));
-      setPreviewData(JSON.parse(JSON.stringify(data)));
-      const cols = Object.keys(data.columns_info);
-
-      // Revisar si preview_data tiene 'status'
-      // Identificar columnas numéricas
+      // Identificar columnas numéricas primero
       const numericCols = new Set<string>();
       for (const [colName, colInfo] of Object.entries(data.columns_info)) {
         if ((colInfo as ColumnInfo).is_numeric) {
@@ -151,29 +144,28 @@ const CleanPage = () => {
 
       // Agregar columna 'status' basada en si hay NULL en columnas numéricas
       data.preview_data = data.preview_data.map((row: any) => {
-        // Verificar si tiene NULL en alguna columna numérica
         let hasNumericNull = false;
-        for (const colName of numericColumns) {
+        for (const colName of numericCols) {
           if (row[colName] === null || row[colName] === undefined) {
             hasNumericNull = true;
             break;
           }
         }
-
         return {
           ...row,
           status: hasNumericNull ? 'inactive' : 'active'
         };
       });
 
-      // Agregar 'status' a las columnas
+      // Guardar datos originales y crear copia para preview
+      setOriginalData(JSON.parse(JSON.stringify(data)));
+      setPreviewData(JSON.parse(JSON.stringify(data)));
+      const cols = Object.keys(data.columns_info);
       if (!cols.includes('status')) {
         cols.push('status');
       }
-
       setColumnNames(cols);
       setPendingOperations([]);
-
     } catch (error: any) {
       console.error("Error:", error);
     } finally {
@@ -181,7 +173,6 @@ const CleanPage = () => {
     }
   };
 
-  // Aplicar operación localmente (preview)
   const applyLocalOperation = (operation: string, options?: any) => {
     if (!previewData || !originalData) return;
 
@@ -190,53 +181,32 @@ const CleanPage = () => {
 
     if (operation === "replace_nulls") {
       operationLabel = "Reemplazar NULL con N/A";
-    
       newPreview.preview_data = newPreview.preview_data.map((row: any) => {
-        const newRow: any = {};
-        // Guardar el status original antes de cambiar nulls
-        const originalStatus = row.status || "active";
-    
+        const newRow = { ...row };
         for (const key in row) {
-          if (key === "status") continue; // ignorar status por ahora
-    
+          if (key === "status") continue;
           const value = row[key];
-          if (value === null || value === undefined) {
-            newRow[key] = "N/A"; // reemplazar nulls
-          } else {
-            newRow[key] = value;
-          }
+          newRow[key] = value === null || value === undefined ? "N/A" : value;
         }
-    
-        // Mantener el status original
-        newRow.status = originalStatus;
-    
         return newRow;
       });
-    
-      // Actualizar columnNames para incluir status
-      if (!columnNames.includes("status")) {
-        setColumnNames([...columnNames, "status"]);
-      }
-    
+
       // Actualizar estadísticas de columnas
       for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
-        (colInfo as ColumnInfo).nulls = 0;
-        (colInfo as ColumnInfo).null_percentage = 0;
+        const typedColInfo = colInfo as ColumnInfo;
+        typedColInfo.nulls = 0;
+        typedColInfo.null_percentage = 0;
       }
-    
-      // Recalcular total_nulls
       newPreview.total_nulls = 0;
     }
 
     if (operation === "impute") {
       operationLabel = `Imputar con ${options?.method || 'mean'}`;
-
-      // Simular imputación (en producción esto debería calcularse)
       newPreview.preview_data = newPreview.preview_data.map((row: any) => {
         const newRow = { ...row };
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
-          if ((colInfo as ColumnInfo).is_numeric && (newRow[colName] === null || newRow[colName] === undefined)) {
-            // Simular valor imputado
+          const typedColInfo = colInfo as ColumnInfo;
+          if (typedColInfo.is_numeric && (newRow[colName] === null || newRow[colName] === undefined)) {
             newRow[colName] = `[${options?.method || 'mean'}]`;
           }
         }
@@ -245,23 +215,22 @@ const CleanPage = () => {
 
       // Actualizar estadísticas
       for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
-        if ((colInfo as ColumnInfo).is_numeric) {
-          (colInfo as ColumnInfo).nulls = 0;
-          (colInfo as ColumnInfo).null_percentage = 0;
+        const typedColInfo = colInfo as ColumnInfo;
+        if (typedColInfo.is_numeric) {
+          typedColInfo.nulls = 0;
+          typedColInfo.null_percentage = 0;
         }
       }
-
       newPreview.total_nulls = 0;
     }
 
     if (operation === "normalize") {
       operationLabel = "Normalizar con StandardScaler";
-
-      // Marcar visualmente que se normalizó
       newPreview.preview_data = newPreview.preview_data.map((row: any) => {
         const newRow = { ...row };
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
-          if ((colInfo as ColumnInfo).is_numeric && typeof newRow[colName] === 'number') {
+          const typedColInfo = colInfo as ColumnInfo;
+          if (typedColInfo.is_numeric && typeof newRow[colName] === 'number') {
             newRow[colName] = `[norm: ${newRow[colName]}]`;
           }
         }
@@ -271,12 +240,11 @@ const CleanPage = () => {
 
     if (operation === "encode") {
       operationLabel = "Codificar variables categóricas";
-
-      // Simular encoding
       newPreview.preview_data = newPreview.preview_data.map((row: any) => {
         const newRow = { ...row };
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
-          if (!(colInfo as ColumnInfo).is_numeric && typeof newRow[colName] === 'string') {
+          const typedColInfo = colInfo as ColumnInfo;
+          if (!typedColInfo.is_numeric && typeof newRow[colName] === 'string') {
             newRow[colName] = `[encoded]`;
           }
         }
@@ -288,7 +256,6 @@ const CleanPage = () => {
     setPendingOperations([...pendingOperations, { type: operation as any, options, label: operationLabel }]);
   };
 
-  // Resetear a datos originales
   const resetPreview = () => {
     if (originalData) {
       setPreviewData(JSON.parse(JSON.stringify(originalData)));
@@ -296,7 +263,6 @@ const CleanPage = () => {
     }
   };
 
-  // Guardar cambios en el backend
   const saveChanges = async () => {
     if (pendingOperations.length === 0) {
       console.log("No hay operaciones pendientes");
@@ -304,9 +270,7 @@ const CleanPage = () => {
     }
 
     setIsSaving(true);
-
     try {
-      // Aplicar cada operación en el backend
       for (const operation of pendingOperations) {
         const response = await fetch(`${BACKEND_URL}/clean`, {
           method: "POST",
@@ -326,10 +290,7 @@ const CleanPage = () => {
       }
 
       console.log("✅ Todos los cambios guardados");
-
-      // Reanalizar para obtener datos actualizados
       await analyzeDataset(selectedDatasetId);
-
     } catch (error: any) {
       console.error("Error:", error);
     } finally {
@@ -403,7 +364,6 @@ const CleanPage = () => {
           </CardContent>
         </Card>
 
-        {/* Operaciones Pendientes */}
         {pendingOperations.length > 0 && (
           <Card className="bg-gradient-card border-warning/20 border-2 shadow-card">
             <CardHeader>
@@ -534,30 +494,21 @@ const CleanPage = () => {
                       </TableHeader>
                       <TableBody>
                         {currentRows.map((row) => (
-                          <TableRow key={row._id}>
-                            <TableCell className="font-medium">{row._id}</TableCell>
+                          <TableRow key={row._id || Math.random().toString()}>
+                            <TableCell className="font-medium">{row._id || "N/A"}</TableCell>
                             {columnNames.map(col => (
                               <TableCell key={col}>
                                 {col === "status" ? (
-                                  (() => {
-                                    // Verificar si hay NULL en alguna columna numérica
-                                    const hasNullInNumeric = Array.from(numericColumns).some(numCol =>
-                                      row[numCol] === null || row[numCol] === undefined
-                                    );
-
-                                    return (
-                                      <Badge
-                                        variant="outline"
-                                        className={
-                                          hasNullInNumeric
-                                            ? "bg-destructive/10 text-destructive border-destructive/20"
-                                            : "bg-success/10 text-success border-success/20"
-                                        }
-                                      >
-                                        {hasNullInNumeric ? "Inactivo" : "Activo"}
-                                      </Badge>
-                                    );
-                                  })()
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      row.status === 'inactive'
+                                        ? "bg-destructive/10 text-destructive border-destructive/20"
+                                        : "bg-success/10 text-success border-success/20"
+                                    }
+                                  >
+                                    {row.status === 'inactive' ? "Inactivo" : "Activo"}
+                                  </Badge>
                                 ) : row[col] === null || row[col] === undefined ? (
                                   <Badge variant="outline" className="bg-destructive/10 text-destructive">
                                     NULL
