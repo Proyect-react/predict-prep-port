@@ -6,8 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Database, AlertCircle, CheckCircle, Trash2, RefreshCw, Loader2, TrendingUp, Code } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Database, AlertCircle, CheckCircle, Trash2, RefreshCw, Loader2, TrendingUp, Code, Save, RotateCcw } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const BACKEND_URL = "http://localhost:8000/api";
@@ -40,41 +39,36 @@ interface AnalysisResponse {
   preview_data: any[];
 }
 
-interface CleanResponse {
-  message: string;
-  cleaned_dataset_id: string;
-  original_dataset_id: string;
-  file_path: string;
-  original_rows: number;
-  cleaned_rows: number;
-  columns_with_nulls: Record<string, any>;
-  status_changes: Record<string, string>;
-  operations_applied: string[];
+interface PendingOperation {
+  type: 'replace_nulls' | 'impute' | 'normalize' | 'encode';
+  options?: any;
+  label: string;
 }
 
 const CleanPage = () => {
-  const { toast } = useToast();
-
-  // Estados
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
   const [isLoadingDatasets, setIsLoadingDatasets] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isCleaning, setIsCleaning] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 5;
 
-  // Datos del análisis
-  const [analysisData, setAnalysisData] = useState<AnalysisResponse | null>(null);
+  // Datos originales y modificados
+  const [originalData, setOriginalData] = useState<AnalysisResponse | null>(null);
+  const [previewData, setPreviewData] = useState<AnalysisResponse | null>(null);
   const [columnNames, setColumnNames] = useState<string[]>([]);
-  
-  // Estados para diálogos de operaciones
+
+  // Operaciones pendientes
+  const [pendingOperations, setPendingOperations] = useState<PendingOperation[]>([]);
+
+  // Diálogos
   const [isImputeDialogOpen, setIsImputeDialogOpen] = useState(false);
   const [imputeMethod, setImputeMethod] = useState<string>("mean");
 
   const indexOfLastRow = currentPage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
-  const currentRows = analysisData?.preview_data.slice(indexOfFirstRow, indexOfLastRow) || [];
+  const currentRows = previewData?.preview_data.slice(indexOfFirstRow, indexOfLastRow) || [];
 
   const getUserId = () => {
     let userId = localStorage.getItem("user_id");
@@ -85,7 +79,6 @@ const CleanPage = () => {
     return userId;
   };
 
-  // Cargar datasets al montar
   useEffect(() => {
     fetchUserDatasets();
   }, []);
@@ -112,11 +105,7 @@ const CleanPage = () => {
         setSelectedDatasetId(data.datasets[0].id);
       }
     } catch (error: any) {
-      toast({
-        title: "Error al cargar datasets",
-        description: error.message,
-        variant: "destructive"
-      });
+      console.error("Error:", error);
     } finally {
       setIsLoadingDatasets(false);
     }
@@ -138,97 +127,183 @@ const CleanPage = () => {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Error ${response.status}: ${errorText}`);
+        throw new Error(`Error ${response.status}`);
       }
 
       const data: AnalysisResponse = await response.json();
 
-      setAnalysisData(data);
-      setColumnNames(Object.keys(data.columns_info));
+      // Guardar datos originales y crear copia para preview
+      setOriginalData(JSON.parse(JSON.stringify(data)));
+      setPreviewData(JSON.parse(JSON.stringify(data)));
+      const cols = Object.keys(data.columns_info);
 
-      toast({
-        title: "Análisis completado",
-        description: `${data.total_rows} filas, ${data.total_columns} columnas, ${data.total_nulls} valores nulos`
-      });
+      // Revisar si preview_data tiene 'status'
+      if (data.preview_data.length > 0 && data.preview_data[0].hasOwnProperty('status')) {
+        cols.push('status');
+      }
+
+      setColumnNames(cols);
+      setPendingOperations([]);
+
     } catch (error: any) {
-      toast({
-        title: "Error al analizar",
-        description: error.message,
-        variant: "destructive"
-      });
+      console.error("Error:", error);
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const handleCleanOperation = async (operation: string, options?: any) => {
-    if (!selectedDatasetId) {
-      toast({
-        title: "No hay dataset seleccionado",
-        variant: "destructive"
+  // Aplicar operación localmente (preview)
+  const applyLocalOperation = (operation: string, options?: any) => {
+    if (!previewData || !originalData) return;
+
+    const newPreview = JSON.parse(JSON.stringify(previewData));
+    let operationLabel = "";
+
+    if (operation === "replace_nulls") {
+      operationLabel = "Reemplazar NULL con N/A";
+
+      // Reemplazar todos los nulls en todas las columnas
+      newPreview.preview_data = newPreview.preview_data.map((row: any) => {
+        const newRow: any = {};
+        for (const key in row) {
+          newRow[key] = row[key] === null || row[key] === undefined ? "N/A" : row[key];
+        }
+        return newRow;
       });
+
+      // Actualizar estadísticas de columnas
+      for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
+        (colInfo as ColumnInfo).nulls = 0;
+        (colInfo as ColumnInfo).null_percentage = 0;
+      }
+
+      // Recalcular total_nulls
+      newPreview.total_nulls = 0;
+    }
+
+    if (operation === "impute") {
+      operationLabel = `Imputar con ${options?.method || 'mean'}`;
+
+      // Simular imputación (en producción esto debería calcularse)
+      newPreview.preview_data = newPreview.preview_data.map((row: any) => {
+        const newRow = { ...row };
+        for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
+          if ((colInfo as ColumnInfo).is_numeric && (newRow[colName] === null || newRow[colName] === undefined)) {
+            // Simular valor imputado
+            newRow[colName] = `[${options?.method || 'mean'}]`;
+          }
+        }
+        return newRow;
+      });
+
+      // Actualizar estadísticas
+      for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
+        if ((colInfo as ColumnInfo).is_numeric) {
+          (colInfo as ColumnInfo).nulls = 0;
+          (colInfo as ColumnInfo).null_percentage = 0;
+        }
+      }
+
+      newPreview.total_nulls = 0;
+    }
+
+    if (operation === "normalize") {
+      operationLabel = "Normalizar con StandardScaler";
+
+      // Marcar visualmente que se normalizó
+      newPreview.preview_data = newPreview.preview_data.map((row: any) => {
+        const newRow = { ...row };
+        for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
+          if ((colInfo as ColumnInfo).is_numeric && typeof newRow[colName] === 'number') {
+            newRow[colName] = `[norm: ${newRow[colName]}]`;
+          }
+        }
+        return newRow;
+      });
+    }
+
+    if (operation === "encode") {
+      operationLabel = "Codificar variables categóricas";
+
+      // Simular encoding
+      newPreview.preview_data = newPreview.preview_data.map((row: any) => {
+        const newRow = { ...row };
+        for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
+          if (!(colInfo as ColumnInfo).is_numeric && typeof newRow[colName] === 'string') {
+            newRow[colName] = `[encoded]`;
+          }
+        }
+        return newRow;
+      });
+    }
+
+    setPreviewData(newPreview);
+    setPendingOperations([...pendingOperations, { type: operation as any, options, label: operationLabel }]);
+  };
+
+  // Resetear a datos originales
+  const resetPreview = () => {
+    if (originalData) {
+      setPreviewData(JSON.parse(JSON.stringify(originalData)));
+      setPendingOperations([]);
+    }
+  };
+
+  // Guardar cambios en el backend
+  const saveChanges = async () => {
+    if (pendingOperations.length === 0) {
+      console.log("No hay operaciones pendientes");
       return;
     }
 
-    setIsCleaning(true);
+    setIsSaving(true);
+
     try {
-      const response = await fetch(`${BACKEND_URL}/clean`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: getUserId(),
-          dataset_id: selectedDatasetId,
-          operation,
-          options
-        })
-      });
+      // Aplicar cada operación en el backend
+      for (const operation of pendingOperations) {
+        const response = await fetch(`${BACKEND_URL}/clean`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: getUserId(),
+            dataset_id: selectedDatasetId,
+            operation: operation.type,
+            options: operation.options
+          })
+        });
 
-      if (!response.ok) throw new Error("Error al limpiar dataset");
+        if (!response.ok) throw new Error("Error al aplicar operación");
 
-      const data: CleanResponse = await response.json();
+        const data = await response.json();
+        console.log("✅ Operación aplicada:", data);
+      }
 
-      toast({
-        title: "✅ Limpieza completada",
-        description: `${data.operations_applied.join(", ")} aplicado. Dataset limpio: ${data.cleaned_dataset_id}`
-      });
+      console.log("✅ Todos los cambios guardados");
 
-      // Reanalizar después de limpiar
+      // Reanalizar para obtener datos actualizados
       await analyzeDataset(selectedDatasetId);
+
     } catch (error: any) {
-      toast({
-        title: "Error al limpiar",
-        description: error.message,
-        variant: "destructive"
-      });
+      console.error("Error:", error);
     } finally {
-      setIsCleaning(false);
+      setIsSaving(false);
     }
   };
 
   const calculateStats = () => {
-    if (!analysisData) return { totalRecords: 0, totalNulls: 0, qualityPercent: "0" };
+    if (!previewData) return { totalRecords: 0, totalNulls: 0, qualityPercent: "0" };
 
-    const totalCells = analysisData.total_rows * analysisData.total_columns;
-    const qualityPercent = ((totalCells - analysisData.total_nulls) / totalCells * 100).toFixed(1);
+    const totalCells = previewData.total_rows * previewData.total_columns;
+    const qualityPercent = ((totalCells - previewData.total_nulls) / totalCells * 100).toFixed(1);
 
     return {
-      totalRecords: analysisData.total_rows,
-      totalNulls: analysisData.total_nulls,
+      totalRecords: previewData.total_rows,
+      totalNulls: previewData.total_nulls,
       qualityPercent
     };
   };
 
   const stats = calculateStats();
-
-  const getRowStatus = (row: any) => {
-    for (const [colName, colInfo] of Object.entries(analysisData?.columns_info || {})) {
-      if (colInfo.is_numeric && (row[colName] === null || row[colName] === "N/A")) {
-        return "inactive";
-      }
-    }
-    return "active";
-  };
 
   if (isLoadingDatasets) {
     return (
@@ -254,7 +329,7 @@ const CleanPage = () => {
         <div>
           <h1 className="text-4xl font-bold text-foreground mb-2">Limpiar Datos</h1>
           <p className="text-muted-foreground">
-            Analiza y limpia tu dataset usando pandas y numpy
+            Analiza y limpia tu dataset - Los cambios se aplican al dar click en "Guardar Cambios"
           </p>
         </div>
 
@@ -280,13 +355,64 @@ const CleanPage = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Operaciones Pendientes */}
+        {pendingOperations.length > 0 && (
+          <Card className="bg-gradient-card border-warning/20 border-2 shadow-card">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-warning" />
+                  <CardTitle className="text-foreground">Operaciones Pendientes</CardTitle>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetPreview}
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Resetear
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-gradient-primary"
+                    onClick={saveChanges}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Guardar Cambios
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {pendingOperations.map((op, idx) => (
+                  <Badge key={idx} variant="outline" className="bg-warning/10 text-warning border-warning/20">
+                    {op.label}
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {isAnalyzing ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-      ) : analysisData && (
+      ) : previewData && (
         <>
           <div className="grid gap-6 md:grid-cols-3">
             <Card className="bg-gradient-card border-border shadow-card">
@@ -296,7 +422,7 @@ const CleanPage = () => {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-foreground">{stats.totalRecords}</div>
-                <p className="text-xs text-muted-foreground">{analysisData.total_columns} columnas detectadas</p>
+                <p className="text-xs text-muted-foreground">{previewData.total_columns} columnas detectadas</p>
               </CardContent>
             </Card>
 
@@ -308,7 +434,7 @@ const CleanPage = () => {
               <CardContent>
                 <div className="text-2xl font-bold text-warning">{stats.totalNulls}</div>
                 <p className="text-xs text-muted-foreground">
-                  {((stats.totalNulls / (stats.totalRecords * analysisData.total_columns)) * 100).toFixed(1)}% del dataset
+                  {((stats.totalNulls / (stats.totalRecords * previewData.total_columns)) * 100).toFixed(1)}% del dataset
                 </p>
               </CardContent>
             </Card>
@@ -335,8 +461,18 @@ const CleanPage = () => {
             <TabsContent value="preview" className="mt-6">
               <Card className="bg-gradient-card border-border shadow-card">
                 <CardHeader>
-                  <CardTitle className="text-foreground">Muestra del Dataset</CardTitle>
-                  <CardDescription>Mostrando primeras filas de {stats.totalRecords} totales</CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-foreground">Muestra del Dataset</CardTitle>
+                      <CardDescription>
+                        {pendingOperations.length > 0 ? (
+                          <span className="text-warning">Vista previa con cambios pendientes</span>
+                        ) : (
+                          `Mostrando primeras filas de ${stats.totalRecords} totales`
+                        )}
+                      </CardDescription>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="rounded-md border border-border overflow-x-auto">
@@ -347,39 +483,33 @@ const CleanPage = () => {
                           {columnNames.map(col => (
                             <TableHead key={col}>{col}</TableHead>
                           ))}
-                          <TableHead>Estado</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {currentRows.map((row) => {
-                          const status = getRowStatus(row);
-                          return (
-                            <TableRow key={row._id} className={isCleaning ? "opacity-50 animate-pulse" : ""}>
-                              <TableCell className="font-medium">{row._id}</TableCell>
-                              {columnNames.map(col => (
-                                <TableCell key={col}>
-                                  {row[col] === null || row[col] === "N/A" ? (
-                                    <Badge variant="outline" className="bg-warning/10 text-warning">
-                                      {row[col] === "N/A" ? "N/A" : "NULL"}
-                                    </Badge>
-                                  ) : (
-                                    row[col]
-                                  )}
-                                </TableCell>
-                              ))}
-                              <TableCell>
-                                <Badge
-                                  variant="outline"
-                                  className={status === "active"
-                                    ? "bg-success/10 text-success border-success/20"
-                                    : "bg-destructive/10 text-destructive border-destructive/20"}
-                                >
-                                  {status === "active" ? "Activo" : "Inactivo"}
-                                </Badge>
+                        {currentRows.map((row) => (
+                          <TableRow key={row._id}>
+                            <TableCell className="font-medium">{row._id}</TableCell>
+                            {columnNames.map(col => (
+                              <TableCell key={col}>
+                                {row[col] === null || row[col] === undefined ? (
+                                  <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                                    NULL
+                                  </Badge>
+                                ) : row[col] === "N/A" ? (
+                                  <Badge variant="outline" className="bg-warning/10 text-warning">
+                                    N/A
+                                  </Badge>
+                                ) : String(row[col]).startsWith('[') ? (
+                                  <Badge variant="outline" className="bg-accent/10 text-accent">
+                                    {row[col]}
+                                  </Badge>
+                                ) : (
+                                  row[col]
+                                )}
                               </TableCell>
-                            </TableRow>
-                          );
-                        })}
+                            ))}
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
                     <div className="flex justify-between items-center mt-4 p-4 border-t">
@@ -391,12 +521,12 @@ const CleanPage = () => {
                         Anterior
                       </Button>
                       <span className="text-sm text-muted-foreground">
-                        Página {currentPage} de {Math.ceil(analysisData.preview_data.length / rowsPerPage)}
+                        Página {currentPage} de {Math.ceil(previewData.preview_data.length / rowsPerPage)}
                       </span>
                       <Button
                         size="sm"
-                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(analysisData.preview_data.length / rowsPerPage)))}
-                        disabled={currentPage === Math.ceil(analysisData.preview_data.length / rowsPerPage)}
+                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(previewData.preview_data.length / rowsPerPage)))}
+                        disabled={currentPage === Math.ceil(previewData.preview_data.length / rowsPerPage)}
                       >
                         Siguiente
                       </Button>
@@ -414,7 +544,7 @@ const CleanPage = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {Object.entries(analysisData.columns_info).map(([colName, colInfo]) => (
+                    {Object.entries(previewData.columns_info).map(([colName, colInfo]) => (
                       <div key={colName} className="flex items-center justify-between p-4 border border-border rounded-lg bg-muted/30">
                         <div className="space-y-1">
                           <p className="font-medium text-foreground">{colName}</p>
@@ -448,33 +578,17 @@ const CleanPage = () => {
                   <CardDescription>Aplica transformaciones con pandas y sklearn</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {/* Reemplazar valores nulos */}
                   <Button
                     className="w-full justify-start bg-gradient-primary hover:opacity-90 text-primary-foreground"
-                    onClick={() => handleCleanOperation("replace_nulls")}
-                    disabled={isCleaning}
+                    onClick={() => applyLocalOperation("replace_nulls")}
                   >
-                    {isCleaning ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Procesando...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Limpiar valores nulos (Reemplazar con N/A)
-                      </>
-                    )}
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Limpiar valores nulos (Reemplazar con N/A)
                   </Button>
 
-                  {/* Imputar con media/mediana */}
                   <Dialog open={isImputeDialogOpen} onOpenChange={setIsImputeDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button 
-                        variant="outline" 
-                        className="w-full justify-start" 
-                        disabled={isCleaning}
-                      >
+                      <Button variant="outline" className="w-full justify-start">
                         <RefreshCw className="h-4 w-4 mr-2" />
                         Imputar con media/mediana
                       </Button>
@@ -503,44 +617,30 @@ const CleanPage = () => {
                         <Button
                           className="w-full"
                           onClick={() => {
-                            handleCleanOperation("impute", { method: imputeMethod });
+                            applyLocalOperation("impute", { method: imputeMethod });
                             setIsImputeDialogOpen(false);
                           }}
-                          disabled={isCleaning}
                         >
-                          {isCleaning ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Imputando...
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              Aplicar Imputación
-                            </>
-                          )}
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Aplicar Vista Previa
                         </Button>
                       </div>
                     </DialogContent>
                   </Dialog>
 
-                  {/* Normalizar datos */}
-                  <Button 
-                    variant="outline" 
-                    className="w-full justify-start" 
-                    disabled={isCleaning}
-                    onClick={() => handleCleanOperation("normalize")}
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => applyLocalOperation("normalize")}
                   >
                     <TrendingUp className="h-4 w-4 mr-2" />
                     Normalizar datos (StandardScaler)
                   </Button>
 
-                  {/* Codificar variables categóricas */}
-                  <Button 
-                    variant="outline" 
-                    className="w-full justify-start" 
-                    disabled={isCleaning}
-                    onClick={() => handleCleanOperation("encode")}
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => applyLocalOperation("encode")}
                   >
                     <Code className="h-4 w-4 mr-2" />
                     Codificar variables categóricas
@@ -549,10 +649,9 @@ const CleanPage = () => {
                   <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-border">
                     <h4 className="font-medium text-sm mb-2 text-foreground">ℹ️ Información</h4>
                     <ul className="text-xs text-muted-foreground space-y-1">
-                      <li>• <strong>Reemplazar con N/A:</strong> Marca filas con nulls como inactivas</li>
-                      <li>• <strong>Imputar:</strong> Rellena nulls con media/mediana/moda</li>
-                      <li>• <strong>Normalizar:</strong> Escala valores numéricos con StandardScaler</li>
-                      <li>• <strong>Codificar:</strong> Convierte variables categóricas a numéricas</li>
+                      <li>• <strong>Vista Previa:</strong> Los cambios se muestran en tiempo real</li>
+                      <li>• <strong>Guardar:</strong> Haz click en "Guardar Cambios" para aplicar al backend</li>
+                      <li>• <strong>Resetear:</strong> Descarta todos los cambios pendientes</li>
                     </ul>
                   </div>
                 </CardContent>
@@ -560,7 +659,7 @@ const CleanPage = () => {
             </TabsContent>
           </Tabs>
         </>
-      )}.
+      )}
     </div>
   );
 };
