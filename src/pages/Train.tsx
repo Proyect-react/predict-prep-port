@@ -109,12 +109,7 @@ const TrainPage = () => {
     try {
       const userId = getUserId();
       
-      // Obtener información del dataset
-      const datasetInfo = cleanedDatasets.find(d => d.id === datasetId);
-      if (!datasetInfo) return;
-      
-      // Descargar y leer el CSV para obtener columnas
-      const response = await fetch(`${BACKEND_URL}/analyze`, {
+      const response = await fetch(`${BACKEND_URL}/analyze-cleaned`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -126,7 +121,9 @@ const TrainPage = () => {
       if (!response.ok) throw new Error("Error al analizar dataset");
       
       const data = await response.json();
-      const columns = Object.keys(data.columns_info).filter(col => col !== "status");
+      
+      // ✅ CAMBIO: usar data.columns en vez de Object.keys(data.columns_info)
+      const columns = data.columns || [];
       
       setColumnNames(columns);
       setSelectedFeatures([]);
