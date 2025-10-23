@@ -392,9 +392,11 @@ const CleanPage = () => {
   };
 
   const calculateStats = () => {
-    if (!previewData) return { totalRecords: 0, totalNulls: 0, qualityPercent: "0" };
+    if (!previewData) return { totalRecords: 0, totalNulls: 0, qualityPercent: 0 }; // Cambiar a number
+    
     const totalCells = previewData.total_rows * previewData.total_columns;
-    const qualityPercent = ((totalCells - previewData.total_nulls) / totalCells * 100).toFixed(1);
+    const qualityPercent = parseFloat(((totalCells - previewData.total_nulls) / totalCells * 100).toFixed(1));
+    
     return {
       totalRecords: previewData.total_rows,
       totalNulls: previewData.total_nulls,
@@ -741,15 +743,6 @@ const CleanPage = () => {
                     <Code className="h-4 w-4 mr-2" />
                     Codificar variables categóricas
                   </Button>
-
-                  <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-border">
-                    <h4 className="font-medium text-sm mb-2 text-foreground">ℹ️ Información</h4>
-                    <ul className="text-xs text-muted-foreground space-y-1">
-                      <li>• <strong>Vista Previa:</strong> Los cambios se muestran en tiempo real</li>
-                      <li>• <strong>Guardar:</strong> Haz click en "Guardar Cambios" para aplicar al backend</li>
-                      <li>• <strong>Resetear:</strong> Descarta todos los cambios pendientes</li>
-                    </ul>
-                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
