@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Database, AlertCircle, CheckCircle, Trash2, RefreshCw, Loader2, TrendingUp, Code, Save, RotateCcw } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 const BACKEND_URL = "http://localhost:8000/api";
 
@@ -336,33 +337,54 @@ const CleanPage = () => {
 
   const saveChanges = async () => {
     if (pendingOperations.length === 0) {
-      console.log("No hay operaciones pendientes");
+      toast({
+        title: "No hay cambios",
+        description: "No hay operaciones pendientes por guardar",
+        variant: "destructive"
+      });
       return;
     }
-
+  
     setIsSaving(true);
     try {
-      for (const operation of pendingOperations) {
-        const response = await fetch(`${BACKEND_URL}/clean`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: getUserId(),
-            dataset_id: selectedDatasetId,
-            operation: operation.type,
-            options: operation.options
-          })
-        });
-
-        if (!response.ok) throw new Error("Error al aplicar operación");
-        const data = await response.json();
-        console.log("✅ Operación aplicada:", data);
+      // 🔥 CAMBIO CLAVE: Enviar TODAS las operaciones en una sola llamada
+      const operationTypes = pendingOperations.map(op => op.type);
+      const operationOptions = pendingOperations.find(op => op.options)?.options || {};
+  
+      const response = await fetch(`${BACKEND_URL}/clean`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: getUserId(),
+          dataset_id: selectedDatasetId,
+          operation: operationTypes,  // ✅ Array de operaciones
+          options: operationOptions
+        })
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Error al aplicar operaciones");
       }
-
-      console.log("✅ Todos los cambios guardados");
+  
+      const data = await response.json();
+      
+      toast({
+        title: "✅ Cambios guardados",
+        description: `${data.operations_applied.length} operaciones aplicadas exitosamente`
+      });
+  
+      // Resetear estado
+      setPendingOperations([]);
       await analyzeDataset(selectedDatasetId);
+      
     } catch (error: any) {
       console.error("Error:", error);
+      toast({
+        title: "Error al guardar",
+        description: error.message,
+        variant: "destructive"
+      });
     } finally {
       setIsSaving(false);
     }
