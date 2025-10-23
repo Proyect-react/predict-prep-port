@@ -1,3 +1,4 @@
+// src/pages/Train.tsx - REFACTORIZADO con API Service + mantiene gráficos
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,17 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sparkles, TrendingUp, Zap, Target, Loader2, AlertCircle, Database } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
+import api from "@/config/api"; // ✅ IMPORT API SERVICE
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-
-const BACKEND_URL = "http://localhost:8000/api";
 
 interface CleanedDataset {
   id: number;
   name: string;
   num_rows: number;
   num_columns: number;
-  created_at: string;
-  file_path: string;
 }
 
 interface TrainedModel {
@@ -35,65 +33,51 @@ interface TrainedModel {
 
 const TrainPage = () => {
   const { toast } = useToast();
-  
+
   const [cleanedDatasets, setCleanedDatasets] = useState<CleanedDataset[]>([]);
   const [trainedModels, setTrainedModels] = useState<TrainedModel[]>([]);
   const [columnNames, setColumnNames] = useState<string[]>([]);
-  
+
   const [isLoadingDatasets, setIsLoadingDatasets] = useState(true);
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isLoadingColumns, setIsLoadingColumns] = useState(false);
   const [isTraining, setIsTraining] = useState(false);
-  
+
   const [modelName, setModelName] = useState("");
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const [selectedAlgorithm, setSelectedAlgorithm] = useState("random_forest");
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [targetVariable, setTargetVariable] = useState("");
-  
-  // Hiperparámetros
+
   const [epochs, setEpochs] = useState(100);
   const [batchSize, setBatchSize] = useState(32);
   const [learningRate, setLearningRate] = useState(0.001);
   const [testSplit, setTestSplit] = useState(0.2);
-  
-  const [selectedModel, setSelectedModel] = useState<TrainedModel | null>(null);
 
-  const getUserId = () => {
-    let userId = localStorage.getItem("user_id");
-    if (!userId) {
-      userId = crypto.randomUUID();
-      localStorage.setItem("user_id", userId);
-    }
-    return userId;
-  };
+  const [selectedModel, setSelectedModel] = useState<TrainedModel | null>(null);
 
   useEffect(() => {
     fetchCleanedDatasets();
     fetchTrainedModels();
+    // eslint-disable-next-line
   }, []);
 
   useEffect(() => {
     if (selectedDatasetId) {
       fetchDatasetColumns(selectedDatasetId);
     }
+    // eslint-disable-next-line
   }, [selectedDatasetId]);
 
   const fetchCleanedDatasets = async () => {
     setIsLoadingDatasets(true);
     try {
-      const userId = getUserId();
-      const response = await fetch(`${BACKEND_URL}/cleaned-datasets/${userId}`);
-      if (!response.ok) throw new Error("Error al obtener datasets limpios");
-      
-      const data = await response.json();
+      const data = await api.clean.getCleanedDatasets();
       setCleanedDatasets(data.datasets);
-      
       if (data.datasets.length > 0 && !selectedDatasetId) {
         setSelectedDatasetId(data.datasets[0].id);
       }
     } catch (error: any) {
-      console.error("Error:", error);
       toast({
         title: "Error",
         description: "No se pudieron cargar los datasets limpios",
@@ -107,33 +91,15 @@ const TrainPage = () => {
   const fetchDatasetColumns = async (datasetId: number) => {
     setIsLoadingColumns(true);
     try {
-      const userId = getUserId();
-      
-      const response = await fetch(`${BACKEND_URL}/analyze-cleaned`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          dataset_id: datasetId
-        })
-      });
-      
-      if (!response.ok) throw new Error("Error al analizar dataset");
-      
-      const data = await response.json();
-      
-      // ✅ CAMBIO: usar data.columns en vez de Object.keys(data.columns_info)
+      const data = await api.clean.analyzeCleanedDataset(datasetId);
       const columns = data.columns || [];
-      
       setColumnNames(columns);
       setSelectedFeatures([]);
       setTargetVariable("");
-      
     } catch (error: any) {
-      console.error("Error:", error);
       toast({
         title: "Error",
-        description: "No se pudieron obtener las columnas del dataset",
+        description: "No se pudieron obtener las columnas",
         variant: "destructive"
       });
     } finally {
@@ -144,14 +110,10 @@ const TrainPage = () => {
   const fetchTrainedModels = async () => {
     setIsLoadingModels(true);
     try {
-      const userId = getUserId();
-      const response = await fetch(`${BACKEND_URL}/models/${userId}`);
-      if (!response.ok) throw new Error("Error al obtener modelos");
-      
-      const data = await response.json();
+      const data = await api.train.getUserModels();
       setTrainedModels(data.models);
     } catch (error: any) {
-      console.error("Error:", error);
+      // silently ignore
     } finally {
       setIsLoadingModels(false);
     }
@@ -159,22 +121,21 @@ const TrainPage = () => {
 
   const handleTrain = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!modelName || !selectedDatasetId || !targetVariable || selectedFeatures.length === 0) {
       toast({
         title: "Campos incompletos",
-        description: "Por favor completa todos los campos requeridos",
+        description: "Completa todos los campos",
         variant: "destructive"
       });
       return;
     }
-    
+
     setIsTraining(true);
-    
+
     try {
-      // Construir hiperparámetros según el algoritmo
       let hyperparameters: any = {};
-      
+
       const pytorchAlgos = ["neural_network", "cnn", "lstm"];
       if (pytorchAlgos.includes(selectedAlgorithm)) {
         hyperparameters = {
@@ -195,44 +156,28 @@ const TrainPage = () => {
           random_state: 42
         };
       }
-      
-      const response = await fetch(`${BACKEND_URL}/train`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: getUserId(),
-          dataset_id: selectedDatasetId,
-          name: modelName,
-          algorithm: selectedAlgorithm,
-          target_variable: targetVariable,
-          hyperparameters: hyperparameters,
-          test_size: testSplit,
-          random_state: 42
-        })
+
+      const data = await api.train.trainModel({
+        dataset_id: selectedDatasetId,
+        name: modelName,
+        algorithm: selectedAlgorithm,
+        target_variable: targetVariable,
+        hyperparameters: hyperparameters,
+        test_size: testSplit,
+        random_state: 42
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Error al entrenar modelo");
-      }
-      
-      const data = await response.json();
-      
+
       toast({
         title: "✅ Modelo entrenado exitosamente",
         description: `${data.name} - Precisión: ${(data.metrics.accuracy * 100).toFixed(2)}%`
       });
-      
-      // Recargar modelos
+
       await fetchTrainedModels();
-      
-      // Limpiar formulario
+
       setModelName("");
       setSelectedFeatures([]);
       setTargetVariable("");
-      
     } catch (error: any) {
-      console.error("Error:", error);
       toast({
         title: "Error al entrenar modelo",
         description: error.message,
@@ -281,7 +226,7 @@ const TrainPage = () => {
       <div className="flex flex-col items-center justify-center min-h-screen">
         <AlertCircle className="h-16 w-16 text-warning mb-4" />
         <h2 className="text-2xl font-bold mb-2">No hay datasets limpios</h2>
-        <p className="text-muted-foreground">Primero debes limpiar un dataset en la página Clean</p>
+        <p className="text-muted-foreground">Limpia un dataset en Clean</p>
       </div>
     );
   }
@@ -289,7 +234,7 @@ const TrainPage = () => {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-4xl font-bold text-foreground mb-2">Entrenar Modelo</h1>
+        <h1 className="text-4xl font-bold mb-2">Entrenar Modelo</h1>
         <p className="text-muted-foreground">
           Configura y entrena modelos con PyTorch y Scikit-learn
         </p>
@@ -371,7 +316,7 @@ const TrainPage = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="dataset">Dataset (CSV Limpio)</Label>
+                  <Label htmlFor="dataset">Dataset Limpio</Label>
                   <Select 
                     value={selectedDatasetId?.toString()} 
                     onValueChange={(value) => setSelectedDatasetId(parseInt(value))}

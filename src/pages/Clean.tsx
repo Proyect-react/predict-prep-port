@@ -1,3 +1,4 @@
+// src/pages/Clean.tsx - REFACTORIZADO con API Service
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,19 +11,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Database, AlertCircle, CheckCircle, Trash2, RefreshCw, Loader2, TrendingUp, Code, Save, RotateCcw } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-
-const BACKEND_URL = "http://localhost:8000/api";
+import api from "@/config/api"; // ✅ IMPORT API SERVICE
 
 interface Dataset {
   id: string;
   name: string;
-  file_type: string;
-  file_size: number;
-  file_size_mb: number;
   num_rows: number;
   num_columns: number;
-  uploaded_at: string;
-  file_path: string;
 }
 
 interface ColumnInfo {
@@ -48,7 +43,7 @@ interface PendingOperation {
 }
 
 const CleanPage = () => {
-  const {toast } = useToast();
+  const { toast } = useToast();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
   const [isLoadingDatasets, setIsLoadingDatasets] = useState(true);
@@ -70,15 +65,6 @@ const CleanPage = () => {
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
   const currentRows = previewData?.preview_data.slice(indexOfFirstRow, indexOfLastRow) || [];
 
-  const getUserId = () => {
-    let userId = localStorage.getItem("user_id");
-    if (!userId) {
-      userId = crypto.randomUUID();
-      localStorage.setItem("user_id", userId);
-    }
-    return userId;
-  };
-
   useEffect(() => {
     fetchUserDatasets();
   }, []);
@@ -86,17 +72,15 @@ const CleanPage = () => {
   useEffect(() => {
     if (selectedDatasetId) {
       setCurrentPage(1);
-      analyzeDataset(selectedDatasetId);
+      analyzeDataset(parseInt(selectedDatasetId));
     }
   }, [selectedDatasetId]);
 
+  // Obtener datasets del usuario
   const fetchUserDatasets = async () => {
     setIsLoadingDatasets(true);
     try {
-      const userId = getUserId();
-      const response = await fetch(`${BACKEND_URL}/datasets/${userId}`);
-      if (!response.ok) throw new Error("Error al obtener datasets");
-      const data = await response.json();
+      const data = await api.upload.getUserDatasets();
       setDatasets(data.datasets);
       if (data.datasets.length > 0 && !selectedDatasetId) {
         setSelectedDatasetId(data.datasets[0].id);
@@ -108,19 +92,12 @@ const CleanPage = () => {
     }
   };
 
-  const analyzeDataset = async (datasetId: string) => {
+  // Analizar dataset
+  const analyzeDataset = async (datasetId: number) => {
     setIsAnalyzing(true);
-    const payload = { user_id: getUserId(), dataset_id: datasetId };
 
     try {
-      const response = await fetch(`${BACKEND_URL}/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) throw new Error(`Error ${response.status}`);
-      const data: AnalysisResponse = await response.json();
+      const data = await api.clean.analyzeDataset(datasetId);
 
       const numericCols = new Set<string>();
       for (const [colName, colInfo] of Object.entries(data.columns_info)) {
@@ -154,7 +131,6 @@ const CleanPage = () => {
     }
   };
 
-  // 🔥 FUNCIÓN CLAVE: Calcular valores reales para imputación
   const calculateImputedValue = (columnName: string, method: string, allRows: any[]) => {
     const values = allRows
       .map(row => row[columnName])
@@ -167,7 +143,7 @@ const CleanPage = () => {
     } else if (method === 'median') {
       const sorted = [...values].sort((a, b) => a - b);
       const mid = Math.floor(sorted.length / 2);
-      return sorted.length % 2 === 0 
+      return sorted.length % 2 === 0
         ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
         : sorted[mid];
     } else if (method === 'mode') {
@@ -178,6 +154,7 @@ const CleanPage = () => {
     return 0;
   };
 
+  // Aplica una operación localmente en la vista previa
   const applyLocalOperation = (operation: string, options?: any) => {
     if (!previewData || !originalData) return;
 
@@ -215,8 +192,7 @@ const CleanPage = () => {
     if (operation === "impute") {
       const method = options?.method || 'mean';
       operationLabel = `Imputar con ${method}`;
-      
-      // 🔥 Calcular valores imputados REALES para cada columna numérica
+
       const imputedValues: Record<string, number> = {};
       for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
         const typedColInfo = colInfo as ColumnInfo;
@@ -230,11 +206,9 @@ const CleanPage = () => {
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
           if (typedColInfo.is_numeric && (newRow[colName] === null || newRow[colName] === undefined)) {
-            // 🔥 Usar el valor calculado, no texto descriptivo
             newRow[colName] = imputedValues[colName];
           }
         }
-        // Recalcular status
         let hasNumericNull = false;
         for (const colName of numericColumns) {
           if (newRow[colName] === null || newRow[colName] === undefined) {
@@ -246,7 +220,6 @@ const CleanPage = () => {
         return newRow;
       });
 
-      // Actualizar estadísticas
       for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
         const typedColInfo = colInfo as ColumnInfo;
         if (typedColInfo.is_numeric) {
@@ -259,8 +232,7 @@ const CleanPage = () => {
 
     if (operation === "normalize") {
       operationLabel = "Normalizar con StandardScaler";
-      
-      // 🔥 Calcular mean y std para cada columna numérica
+
       const stats: Record<string, { mean: number; std: number }> = {};
       for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
         const typedColInfo = colInfo as ColumnInfo;
@@ -268,12 +240,12 @@ const CleanPage = () => {
           const values = newPreview.preview_data
             .map((row: any) => row[colName])
             .filter((val: any) => val !== null && val !== undefined && typeof val === 'number');
-          
+
           if (values.length > 0) {
             const mean = values.reduce((a: number, b: number) => a + b, 0) / values.length;
             const variance = values.reduce((a: number, b: number) => a + Math.pow(b - mean, 2), 0) / values.length;
             const std = Math.sqrt(variance);
-            stats[colName] = { mean, std: std || 1 }; // Evitar división por cero
+            stats[colName] = { mean, std: std || 1 };
           }
         }
       }
@@ -283,9 +255,8 @@ const CleanPage = () => {
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
           if (typedColInfo.is_numeric && typeof newRow[colName] === 'number' && stats[colName]) {
-            // 🔥 Aplicar normalización Z-score real
             const normalized = (newRow[colName] - stats[colName].mean) / stats[colName].std;
-            newRow[colName] = Math.round(normalized * 100) / 100; // 2 decimales
+            newRow[colName] = Math.round(normalized * 100) / 100;
           }
         }
         return newRow;
@@ -294,8 +265,7 @@ const CleanPage = () => {
 
     if (operation === "encode") {
       operationLabel = "Codificar variables categóricas";
-      
-      // 🔥 Crear mapeo real para cada columna categórica
+
       const encodings: Record<string, Record<string, number>> = {};
       for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
         const typedColInfo = colInfo as ColumnInfo;
@@ -317,7 +287,6 @@ const CleanPage = () => {
         for (const [colName, colInfo] of Object.entries(newPreview.columns_info)) {
           const typedColInfo = colInfo as ColumnInfo;
           if (!typedColInfo.is_numeric && typeof newRow[colName] === 'string' && encodings[colName]) {
-            // 🔥 Usar el código numérico real
             newRow[colName] = encodings[colName][newRow[colName]] ?? 0;
           }
         }
@@ -336,51 +305,37 @@ const CleanPage = () => {
     }
   };
 
+  // Guardar cambios con API
   const saveChanges = async () => {
     if (pendingOperations.length === 0) {
       toast({
         title: "No hay cambios",
-        description: "No hay operaciones pendientes por guardar",
+        description: "No hay operaciones pendientes",
         variant: "destructive"
       });
       return;
     }
-  
+
     setIsSaving(true);
     try {
-      // 🔥 CAMBIO CLAVE: Enviar TODAS las operaciones en una sola llamada
       const operationTypes = pendingOperations.map(op => op.type);
       const operationOptions = pendingOperations.find(op => op.options)?.options || {};
-  
-      const response = await fetch(`${BACKEND_URL}/clean`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: getUserId(),
-          dataset_id: selectedDatasetId,
-          operation: operationTypes,  // ✅ Array de operaciones
-          options: operationOptions
-        })
-      });
-  
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Error al aplicar operaciones");
-      }
-  
-      const data = await response.json();
-      
+
+      const data = await api.clean.cleanDataset(
+        parseInt(selectedDatasetId),
+        operationTypes,
+        operationOptions
+      );
+
       toast({
         title: "✅ Cambios guardados",
-        description: `${data.operations_applied.length} operaciones aplicadas exitosamente`
+        description: `${data.operations_applied.length} operaciones aplicadas`
       });
-  
-      // Resetear estado
+
       setPendingOperations([]);
-      await analyzeDataset(selectedDatasetId);
-      
+      await analyzeDataset(parseInt(selectedDatasetId));
+
     } catch (error: any) {
-      console.error("Error:", error);
       toast({
         title: "Error al guardar",
         description: error.message,
@@ -392,11 +347,11 @@ const CleanPage = () => {
   };
 
   const calculateStats = () => {
-    if (!previewData) return { totalRecords: 0, totalNulls: 0, qualityPercent: 0 }; // Cambiar a number
-    
+    if (!previewData) return { totalRecords: 0, totalNulls: 0, qualityPercent: 0 };
+
     const totalCells = previewData.total_rows * previewData.total_columns;
     const qualityPercent = parseFloat(((totalCells - previewData.total_nulls) / totalCells * 100).toFixed(1));
-    
+
     return {
       totalRecords: previewData.total_rows,
       totalNulls: previewData.total_nulls,
@@ -418,86 +373,74 @@ const CleanPage = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
         <Database className="h-16 w-16 text-muted-foreground mb-4" />
-        <h2 className="text-2xl font-bold mb-2">No hay datasets disponibles</h2>
-        <p className="text-muted-foreground">Sube un archivo primero en la página de Upload</p>
+        <h2 className="text-2xl font-bold mb-2">No hay datasets</h2>
+        <p className="text-muted-foreground">Sube un archivo en Upload</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-8">
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-4xl font-bold text-foreground mb-2">Limpiar Datos</h1>
-          <p className="text-muted-foreground">
-            Analiza y limpia tu dataset - Los cambios se aplican al dar click en "Guardar Cambios"
-          </p>
-        </div>
+      <div>
+        <h1 className="text-4xl font-bold mb-2">Limpiar Datos</h1>
+        <p className="text-muted-foreground">Analiza y limpia tu dataset</p>
+      </div>
 
-        <Card className="bg-gradient-card border-border shadow-card">
+      <Card>
+        <CardHeader>
+          <CardTitle>Dataset Actual</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label>Seleccionar Dataset</Label>
+            <Select value={selectedDatasetId} onValueChange={setSelectedDatasetId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un dataset" />
+              </SelectTrigger>
+              <SelectContent>
+                {datasets.map((dataset) => (
+                  <SelectItem key={dataset.id} value={dataset.id}>
+                    {dataset.name} ({dataset.num_rows} filas)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {pendingOperations.length > 0 && (
+        <Card className="border-warning/20 border-2">
           <CardHeader>
-            <CardTitle className="text-foreground">Dataset Actual</CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-warning" />
+                <CardTitle>Operaciones Pendientes</CardTitle>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={resetPreview}>
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Resetear
+                </Button>
+                <Button size="sm" onClick={saveChanges} disabled={isSaving}>
+                  {isSaving ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Guardando...</>
+                  ) : (
+                    <><Save className="h-4 w-4 mr-2" />Guardar</>
+                  )}
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="dataset-select">Seleccionar Dataset</Label>
-              <Select value={selectedDatasetId} onValueChange={setSelectedDatasetId}>
-                <SelectTrigger id="dataset-select">
-                  <SelectValue placeholder="Selecciona un dataset" />
-                </SelectTrigger>
-                <SelectContent>
-                  {datasets.map((dataset) => (
-                    <SelectItem key={dataset.id} value={dataset.id}>
-                      {dataset.name} ({dataset.num_rows} filas)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex flex-wrap gap-2">
+              {pendingOperations.map((op, idx) => (
+                <Badge key={idx} variant="outline">{op.label}</Badge>
+              ))}
             </div>
           </CardContent>
         </Card>
-
-        {pendingOperations.length > 0 && (
-          <Card className="bg-gradient-card border-warning/20 border-2 shadow-card">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-5 w-5 text-warning" />
-                  <CardTitle className="text-foreground">Operaciones Pendientes</CardTitle>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={resetPreview}>
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    Resetear
-                  </Button>
-                  <Button size="sm" className="bg-gradient-primary" onClick={saveChanges} disabled={isSaving}>
-                    {isSaving ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Guardando...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" />
-                        Guardar Cambios
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {pendingOperations.map((op, idx) => (
-                  <Badge key={idx} variant="outline" className="bg-warning/10 text-warning border-warning/20">
-                    {op.label}
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      )}
 
       {isAnalyzing ? (
         <div className="flex items-center justify-center py-12">
