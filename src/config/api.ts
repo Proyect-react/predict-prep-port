@@ -1,7 +1,7 @@
 // src/config/api.ts
 
 // 🔹 Obtener URL del backend desde variables de entorno
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://backendml-sri1.onrender.com';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 // 🔹 Helper para manejar errores HTTP
 const handleResponse = async (response: Response) => {
