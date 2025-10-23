@@ -48,6 +48,7 @@ interface PendingOperation {
 }
 
 const CleanPage = () => {
+  const {toast } = useToast();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
   const [isLoadingDatasets, setIsLoadingDatasets] = useState(true);
